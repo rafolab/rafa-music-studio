@@ -40,7 +40,9 @@ Program je natívna Windows aplikácia. Obrazovka je HTML zobrazené vo vstavano
 4. **Bez internetu:** UI nesmie načítavať nič z webu (CDN, Google Fonts, externé knižnice). Všetko musí byť v `ui/`. Písma: systémové (`Segoe UI`, `Arial`) alebo súbor v `ui/assets/`.
 5. **Texty v UI po slovensky.**
 6. **Testovanie dizajnu:** `ui/index.html` sa dá otvoriť priamo v prehliadači. `rafa-bridge.js` vtedy beží v **simulačnom režime** (falošný merač, nahrávanie, stopy), takže dizajn sa dá ladiť bez programu.
-7. **Malé kroky:** jedna zmena = jedna jasná úloha. Žiadne veľké prestavby bez dohody.
+7. **Súbory v `ui/` musia mať jedinečné mená** (aj v podpriečinkoch), lebo sa balia do programu podľa mena súboru. Napr. `ui/assets/logo.svg` sa načíta ako `assets/logo.svg` aj `logo.svg`.
+8. **Kým v `ui/` nie je `index.html`**, program použije dočasnú klasickú obrazovku v C++. Tú si možno vynútiť aj podržaním **Shift** pri spustení programu (záchranný režim).
+9. **Malé kroky:** jedna zmena = jedna jasná úloha. Žiadne veľké prestavby bez dohody.
 
 ## Ako sa súbory dostanú do repozitára
 
@@ -62,6 +64,6 @@ Program je natívna Windows aplikácia. Obrazovka je HTML zobrazené vo vstavano
 | Etapa | Obsah | Stav |
 | --- | --- | --- |
 | 1 | Skúška zvuku – nahrávanie a prehrávanie gitary (dočasná C++ obrazovka) | hotové, čaká na test s gitarou |
-| 1b | Most HTML ↔ motor (WebView2), `API.md` v1 | Claude – rozpracované |
+| 1b | Most HTML ↔ motor (WebView2), `API.md` v1 | hotové – čaká na `ui/index.html` od ChatGPT |
 | 1c | Dizajn obrazovky v HTML podľa `API.md` v1 | ChatGPT – na rade |
 | 2 | Tempo, metronóm, slučka (loop) | neskôr |

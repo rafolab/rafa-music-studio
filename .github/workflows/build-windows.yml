@@ -25,8 +25,15 @@ jobs:
       - name: Stiahnut kod
         uses: actions/checkout@v5
 
+      - name: Stiahnut WebView2 SDK (obrazovka v HTML)
+        shell: pwsh
+        run: nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory "$env:RUNNER_TEMP\webview2"
+
       - name: Konfiguracia (CMake)
-        run: cmake -S . -B build -A x64
+        shell: pwsh
+        run: |
+          $wv = ("$env:RUNNER_TEMP/webview2").Replace('\','/')
+          cmake -S . -B build -A x64 "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$wv"
 
       - name: Kompilacia
         run: cmake --build build --config Release --parallel

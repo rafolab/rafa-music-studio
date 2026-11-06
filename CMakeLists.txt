@@ -47,9 +47,15 @@ juce_add_gui_app (${TARGET_NAME}
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "Nahravanie gitary"
     NEEDS_CURL FALSE
-    NEEDS_WEB_BROWSER FALSE)
+    NEEDS_WEB_BROWSER TRUE
+    NEEDS_WEBVIEW2 TRUE)    # obrazovka v HTML cez WebView2 (Windows 11 ho ma vstavany)
 
 juce_generate_juce_header (${TARGET_NAME})
+
+# Obrazovka v HTML (priecinok ui/) sa zabali priamo do .exe
+file (GLOB_RECURSE RAFA_UI_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/*")
+list (FILTER RAFA_UI_FILES EXCLUDE REGEX "\\.md$")
+juce_add_binary_data (RafaUIData NAMESPACE RafaUI HEADER_NAME RafaUIData.h SOURCES ${RAFA_UI_FILES})
 
 target_sources (${TARGET_NAME} PRIVATE
     Source/Main.cpp
@@ -59,6 +65,7 @@ target_sources (${TARGET_NAME} PRIVATE
     Source/TrackListComponent.h
     Source/Diagnostics.cpp
     Source/Diagnostics.h
+    Source/WebBridge.cpp
     Source/RafaLookAndFeel.h
     Source/Texts.h)
 
@@ -70,7 +77,8 @@ target_compile_definitions (${TARGET_NAME} PRIVATE
     JUCE_MODAL_LOOPS_PERMITTED=1
     JUCE_STRICT_REFCOUNTEDPOINTER=1
     JUCE_USE_CURL=0
-    JUCE_WEB_BROWSER=0
+    JUCE_WEB_BROWSER=1
+    JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:${TARGET_NAME},JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:${TARGET_NAME},JUCE_VERSION>"
@@ -83,6 +91,8 @@ target_link_libraries (${TARGET_NAME} PRIVATE
     juce::juce_audio_devices
     juce::juce_audio_processors
     juce::juce_audio_utils
+    juce::juce_gui_extra
+    RafaUIData
     juce::juce_recommended_config_flags)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")

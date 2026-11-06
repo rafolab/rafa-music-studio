@@ -50,6 +50,7 @@ private:
     juce::StringArray inputDeviceIDs;
     juce::ToggleButton monitorToggle;
     InputMeter inputMeter;
+    float inputMeterDb = -100.0f;
 
     // merac meria len vybrany vstup (kanal) pre gitaru
     te::LevelMeasurer::Client meterClient;
@@ -102,6 +103,23 @@ private:
     void updateTransportButtons();
 
     void setStatus (const juce::String&, juce::Colour = RafaColours::textDim);
+    juce::String statusLevel { "info" };
+
+    // --- obrazovka v HTML (ui/) - implementacia vo WebBridge.cpp ---
+    std::unique_ptr<juce::WebBrowserComponent> webView;
+    bool webUIActive = false;
+    juce::String lastTracksSignature;
+    std::map<juce::String, juce::Array<juce::var>> peaksCache;
+
+    void setupWebUI();
+    void handleWebCommand (const juce::var& message);
+    void sendStateToWeb();
+    void sendTracksToWebIfChanged (bool force);
+    juce::var buildStateObject();
+    juce::var buildTracksObject();
+    juce::Array<juce::var> getPeaksFor (te::WaveAudioClip&);
+    te::AudioTrack* findTrackById (const juce::String&);
+    std::optional<juce::WebBrowserComponent::Resource> getWebResource (const juce::String& url);
 
     void timerCallback() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;

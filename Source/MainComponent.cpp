@@ -213,11 +213,14 @@ MainComponent::MainComponent (te::Engine& e)
     startTimerHz (30);
 
     setStatus (sk ("Pripravené. Vyber vstup pre gitaru a stlač NAHRÁVAŤ."));
+
+    setupWebUI();
 }
 
 MainComponent::~MainComponent()
 {
     stopTimer();
+    webView = nullptr;
     engine.getDeviceManager().removeChangeListener (this);
     detachMeter();
     closeEdit();
@@ -246,6 +249,9 @@ void MainComponent::paint (juce::Graphics& g)
 
 void MainComponent::resized()
 {
+    if (webView != nullptr)
+        webView->setBounds (getLocalBounds());
+
     auto r = getLocalBounds();
 
     // ---- hlavicka
@@ -319,6 +325,11 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
 
 void MainComponent::setStatus (const juce::String& text, juce::Colour colour)
 {
+    if (colour == RafaColours::play)        statusLevel = "ok";
+    else if (colour == RafaColours::accent) statusLevel = "warn";
+    else if (colour == RafaColours::record) statusLevel = text.startsWith (sk ("●")) ? "recording" : "error";
+    else                                    statusLevel = "info";
+
     statusLabel.setText (text, juce::dontSendNotification);
     statusLabel.setColour (juce::Label::textColourId, colour);
 }
@@ -895,10 +906,13 @@ void MainComponent::updateTransportButtons()
 //==============================================================================
 void MainComponent::timerCallback()
 {
-    if (meteredDevice != nullptr)
-        inputMeter.setLevelDb (meterClient.getAndClearAudioLevel (0).dB);
-    else
-        inputMeter.setLevelDb (-100.0f);
+    {
+        auto db = meteredDevice != nullptr ? meterClient.getAndClearAudioLevel (0).dB : -100.0f;
+        inputMeterDb = db > inputMeterDb ? db : juce::jmax (db, inputMeterDb - 1.5f);
+
+        if (! webUIActive)
+            inputMeter.setLevelDb (db);
+    }
 
     if (pendingRecordingCheck)
         checkFinishedRecording();
@@ -925,6 +939,15 @@ void MainComponent::timerCallback()
 
     if (timerTicks % 15 == 0)
         updateDeviceInfo();
+
+    if (webUIActive)
+    {
+        if (timerTicks % 2 == 0)
+            sendStateToWeb();
+
+        if (timerTicks % 6 == 0)
+            sendTracksToWebIfChanged (false);
+    }
 }
 
 void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
