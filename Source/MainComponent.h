@@ -10,6 +10,7 @@ class InputMeter : public juce::Component
 {
 public:
     void setLevel (float linearLevel);
+    void setLevelDb (float db);
     void paint (juce::Graphics&) override;
 
 private:
@@ -49,7 +50,12 @@ private:
     juce::StringArray inputDeviceIDs;
     juce::ToggleButton monitorToggle;
     InputMeter inputMeter;
-    juce::AudioDeviceManager::LevelMeter::Ptr inputLevel;
+
+    // merac meria len vybrany vstup (kanal) pre gitaru
+    te::LevelMeasurer::Client meterClient;
+    te::WaveInputDevice* meteredDevice = nullptr;
+    void attachMeterToSelectedInput();
+    void detachMeter();
 
     // transport
     juce::TextButton recordButton, playButton, stopButton, rewindButton;
@@ -60,6 +66,13 @@ private:
     TrackListComponent trackList;
 
     te::AudioTrack* currentRecordingTrack = nullptr;
+
+    // kontrola, ci po nahravani naozaj vznikol klip so zvukovym suborom
+    te::EditItemID recordingTrackID;
+    int clipsBeforeRecording = 0;
+    bool pendingRecordingCheck = false;
+    juce::uint32 recordingCheckDeadline = 0;
+    void checkFinishedRecording();
     int timerTicks = 0;
 
     // --- skladby ---

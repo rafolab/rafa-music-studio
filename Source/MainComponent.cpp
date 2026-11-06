@@ -6,7 +6,11 @@
 //==============================================================================
 void InputMeter::setLevel (float linearLevel)
 {
-    auto db = juce::Decibels::gainToDecibels (linearLevel, -100.0f);
+    setLevelDb (juce::Decibels::gainToDecibels (linearLevel, -100.0f));
+}
+
+void InputMeter::setLevelDb (float db)
+{
 
     // rychly nabeh, pomalsi dobeh
     levelDb = db > levelDb ? db : juce::jmax (db, levelDb - 1.5f);
@@ -142,6 +146,7 @@ MainComponent::MainComponent (te::Engine& e)
     {
         settings->setValue ("inputDeviceID", getSelectedInputID());
         settings->saveIfNeeded();
+        attachMeterToSelectedInput();
     };
     addAndMakeVisible (inputCombo);
 
@@ -191,10 +196,9 @@ MainComponent::MainComponent (te::Engine& e)
     // ---- motor
     auto& dm = engine.getDeviceManager();
     dm.addChangeListener (this);
-    inputLevel = dm.deviceManager.getInputLevelGetter();
-
     ensureMonoInputs();
     refreshInputList();
+    attachMeterToSelectedInput();
     updateDeviceInfo();
 
     auto last = juce::File (settings->getValue ("lastSong"));
@@ -215,6 +219,7 @@ MainComponent::~MainComponent()
 {
     stopTimer();
     engine.getDeviceManager().removeChangeListener (this);
+    detachMeter();
     closeEdit();
     setLookAndFeel (nullptr);
 }
@@ -467,6 +472,40 @@ juce::String MainComponent::getSelectedInputID() const
     return id > 0 ? inputDeviceIDs[id - 1] : juce::String();
 }
 
+void MainComponent::detachMeter()
+{
+    // Zariadenie mohlo medzitym zaniknut (napr. odpojene kombo) - odhlasime sa len z existujuceho
+    if (meteredDevice != nullptr)
+    {
+        auto& dm = engine.getDeviceManager();
+
+        for (int i = 0; i < dm.getNumWaveInDevices(); ++i)
+            if (dm.getWaveInDevice (i) == meteredDevice)
+                meteredDevice->levelMeasurer.removeClient (meterClient);
+    }
+
+    meteredDevice = nullptr;
+    meterClient.reset();
+}
+
+void MainComponent::attachMeterToSelectedInput()
+{
+    detachMeter();
+
+    auto id = getSelectedInputID();
+    auto& dm = engine.getDeviceManager();
+
+    for (int i = 0; i < dm.getNumWaveInDevices(); ++i)
+    {
+        if (auto* w = dm.getWaveInDevice (i); w != nullptr && w->getDeviceID() == id)
+        {
+            meteredDevice = w;
+            meteredDevice->levelMeasurer.addClient (meterClient);
+            break;
+        }
+    }
+}
+
 void MainComponent::applyMonitoring()
 {
     auto mode = monitorToggle.getToggleState() ? te::InputDevice::MonitorMode::on
@@ -535,6 +574,13 @@ void MainComponent::showAudioSettings()
 
 void MainComponent::runDiagnostics()
 {
+    // Skenovanie zariadeni moze narusit zvuk - len ked je vsetko zastavene
+    if (edit != nullptr && (edit->getTransport().isPlaying() || edit->getTransport().isRecording()))
+    {
+        setStatus (sk ("Diagnostiku spusti, keď je prehrávanie zastavené."), RafaColours::accent);
+        return;
+    }
+
     auto report = Diagnostics::buildReport (engine, edit.get(), editFile);
     auto file = Diagnostics::saveReport (report);
     juce::SystemClipboard::copyTextToClipboard (report);
@@ -610,6 +656,7 @@ te::AudioTrack* MainComponent::prepareTrackForRecording()
     edit->getTransport().ensureContextAllocated();
 
     bool assigned = false;
+    juce::String assignError;
 
     for (auto* instance : edit->getAllInputDevices())
     {
@@ -624,17 +671,29 @@ te::AudioTrack* MainComponent::prepareTrackForRecording()
         {
             auto result = instance->setTarget (target->itemID, true, &edit->getUndoManager(), 0);
 
-            if (result.has_value())
+            if (! result.has_value())
             {
-                instance->setRecordingEnabled (target->itemID, true);
-                assigned = true;
+                assignError = result.error();
+                continue;
             }
+
+            instance->setRecordingEnabled (target->itemID, true);
+
+            // overime, ze vstup je naozaj nasmerovany do tejto stopy a pripraveny nahravat
+            if (instance->getTargets().contains (target->itemID)
+                 && instance->isRecordingEnabled (target->itemID))
+                assigned = true;
+            else
+                assignError = sk ("vstup sa nepodarilo zapnúť na nahrávanie");
         }
     }
 
     if (! assigned)
     {
-        setStatus (sk ("Vstup sa nepodarilo priradiť k stope. Skús Nastavenia zvuku."), RafaColours::record);
+        if (assignError.isEmpty())
+            assignError = sk ("vybraný vstup sa nenašiel – skontroluj Nastavenia zvuku");
+
+        setStatus (sk ("Nahrávanie sa nespustilo: ") + assignError, RafaColours::record);
         return nullptr;
     }
 
@@ -662,10 +721,18 @@ void MainComponent::startRecording()
     if (currentRecordingTrack == nullptr)
         return;
 
+    recordingTrackID = currentRecordingTrack->itemID;
+    clipsBeforeRecording = currentRecordingTrack->getClips().size();
+    pendingRecordingCheck = false;
+
     trackList.refreshIfChanged();
     trackList.setRecordingTrack (currentRecordingTrack);
+
+    // Rezim vrstvenia: kazda nova vrstva zacina od zaciatku skladby (pozicia 0),
+    // aby sedela s predchadzajucimi. Nahravanie z aktualnej pozicie zatial nie je.
+    transport.setPosition (te::TimePosition());
     transport.record (false);
-    setStatus (sk ("● Nahrávam do stopy „") + currentRecordingTrack->getName() + sk ("“ – STOP ukončí nahrávanie."),
+    setStatus (sk ("● Nahrávam od začiatku do stopy „") + currentRecordingTrack->getName() + sk ("“ – STOP ukončí nahrávanie."),
                RafaColours::record);
     updateTransportButtons();
 }
@@ -700,8 +767,10 @@ void MainComponent::stopTransport()
 
     if (wasRecording)
     {
-        saveEdit();
-        setStatus (sk ("Nahrávka uložená. Stlač Na začiatok a PREHRAŤ."), RafaColours::play);
+        // klip vznika az po ukonceni nahravania - overime ho v casovaci
+        pendingRecordingCheck = true;
+        recordingCheckDeadline = juce::Time::getMillisecondCounter() + 4000;
+        setStatus (sk ("Ukladám nahrávku…"));
     }
     else
     {
@@ -719,6 +788,54 @@ void MainComponent::rewind()
         edit->getTransport().setPosition (te::TimePosition());
 }
 
+void MainComponent::checkFinishedRecording()
+{
+    if (edit == nullptr)
+    {
+        pendingRecordingCheck = false;
+        return;
+    }
+
+    auto& transport = edit->getTransport();
+
+    if (transport.isRecording() || transport.isRecordingStopping())
+        return;
+
+    te::AudioTrack* track = nullptr;
+
+    for (auto* t : te::getAudioTracks (*edit))
+        if (t->itemID == recordingTrackID)
+            track = t;
+
+    te::WaveAudioClip* newClip = nullptr;
+
+    if (track != nullptr && track->getClips().size() > clipsBeforeRecording)
+        newClip = dynamic_cast<te::WaveAudioClip*> (track->getClips().getLast());
+
+    if (newClip != nullptr)
+    {
+        auto file = newClip->getOriginalFile();
+        auto seconds = newClip->getPosition().getLength().inSeconds();
+
+        if (file.existsAsFile() && file.getSize() > 0 && seconds > 0.0)
+        {
+            pendingRecordingCheck = false;
+            saveEdit();
+            setStatus (sk ("Nahrávka uložená (") + juce::String (seconds, 1)
+                         + sk (" s). Stlač PREHRAŤ alebo nahraj ďalšiu vrstvu."), RafaColours::play);
+            return;
+        }
+    }
+
+    if (juce::Time::getMillisecondCounter() > recordingCheckDeadline)
+    {
+        pendingRecordingCheck = false;
+        saveEdit();
+        setStatus (sk ("Nahrávka nevznikla alebo je prázdna. Skontroluj vstup a pošli Diagnostiku."),
+                   RafaColours::record);
+    }
+}
+
 void MainComponent::deleteTrack (te::AudioTrack& t)
 {
     if (edit == nullptr || edit->getTransport().isRecording())
@@ -727,6 +844,7 @@ void MainComponent::deleteTrack (te::AudioTrack& t)
     auto name = t.getName();
     juce::Component::SafePointer<MainComponent> safeThis (this);
     juce::ReferenceCountedObjectPtr<te::AudioTrack> trackPtr (&t);
+    auto* editAtRequest = edit.get();
 
     auto options = juce::MessageBoxOptions{}
                        .withIconType (juce::MessageBoxIconType::QuestionIcon)
@@ -735,9 +853,16 @@ void MainComponent::deleteTrack (te::AudioTrack& t)
                        .withButton (sk ("Zmazať"), 1)
                        .withButton (sk ("Zrušiť"), 0);
 
-    juce::AlertWindow::showAsync (options, [safeThis, trackPtr] (int result)
+    juce::AlertWindow::showAsync (options, [safeThis, trackPtr, editAtRequest] (int result)
     {
         if (result != 1 || safeThis == nullptr || safeThis->edit == nullptr)
+            return;
+
+        // kym bolo otvorene okno, mohla sa zmenit skladba alebo zacat nahravanie
+        auto& ed = *safeThis->edit;
+
+        if (&ed != editAtRequest || ed.getTransport().isRecording()
+             || ! te::getAudioTracks (ed).contains (trackPtr.get()))
             return;
 
         safeThis->edit->getTransport().stop (false, false);
@@ -762,14 +887,21 @@ void MainComponent::updateTransportButtons()
     for (auto* b : { &newSongButton, &openSongButton, &exportButton, &audioSettingsButton })
         b->setEnabled (! transport.isRecording());
 
+    diagnosticsButton.setEnabled (! transport.isRecording() && ! transport.isPlaying());
+
     inputCombo.setEnabled (! transport.isRecording());
 }
 
 //==============================================================================
 void MainComponent::timerCallback()
 {
-    if (inputLevel != nullptr)
-        inputMeter.setLevel ((float) inputLevel->getCurrentLevel());
+    if (meteredDevice != nullptr)
+        inputMeter.setLevelDb (meterClient.getAndClearAudioLevel (0).dB);
+    else
+        inputMeter.setLevelDb (-100.0f);
+
+    if (pendingRecordingCheck)
+        checkFinishedRecording();
 
     if (edit != nullptr)
     {
@@ -800,9 +932,11 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
     if (source == &engine.getDeviceManager())
     {
         // zmenilo sa zvukove zariadenie (napr. pripojene kombo alebo zmena v nastaveniach)
+        detachMeter();
         ensureMonoInputs();
         applyMonitoring();
         refreshInputList();
+        attachMeterToSelectedInput();
         updateDeviceInfo();
 
         if (edit != nullptr && ! edit->getTransport().isRecording())
