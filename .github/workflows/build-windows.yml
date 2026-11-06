@@ -22,10 +22,10 @@ jobs:
 
     steps:
       - name: Stiahnut kod
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Konfiguracia (CMake)
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -S . -B build -A x64
 
       - name: Kompilacia
         run: cmake --build build --config Release --parallel
@@ -42,7 +42,7 @@ jobs:
           Compress-Archive -Path dist/RAFA-MUSIC-STUDIO -DestinationPath dist/RAFA-MUSIC-STUDIO-Windows.zip -Force
 
       - name: Ulozit ako artefakt
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: RAFA-MUSIC-STUDIO-Windows
           path: dist/RAFA-MUSIC-STUDIO-Windows.zip
