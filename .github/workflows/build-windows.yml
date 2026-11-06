@@ -1,0 +1,60 @@
+name: Zostavenie pre Windows
+
+# Po kazdej zmene v hlavnej vetve sa automaticky vyrobi RAFA MUSIC STUDIO pre Windows
+# a zverejni sa ako stiahnutelny ZIP v sekcii Releases pod nazvom "najnovsia-verzia".
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Stiahnut kod
+        uses: actions/checkout@v4
+
+      - name: Konfiguracia (CMake)
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Kompilacia
+        run: cmake --build build --config Release --parallel
+
+      - name: Zbalit program
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter "RAFA MUSIC STUDIO.exe" | Where-Object { $_.FullName -match "Release" } | Select-Object -First 1
+          if (-not $exe) { throw "Nenasiel som RAFA MUSIC STUDIO.exe" }
+          New-Item -ItemType Directory -Force -Path dist/RAFA-MUSIC-STUDIO | Out-Null
+          Copy-Item $exe.FullName "dist/RAFA-MUSIC-STUDIO/"
+          Copy-Item README.md "dist/RAFA-MUSIC-STUDIO/CITAJ-MA.md"
+          Copy-Item LICENSE.md "dist/RAFA-MUSIC-STUDIO/"
+          Compress-Archive -Path dist/RAFA-MUSIC-STUDIO -DestinationPath dist/RAFA-MUSIC-STUDIO-Windows.zip -Force
+
+      - name: Ulozit ako artefakt
+        uses: actions/upload-artifact@v4
+        with:
+          name: RAFA-MUSIC-STUDIO-Windows
+          path: dist/RAFA-MUSIC-STUDIO-Windows.zip
+
+      - name: Zverejnit ako "najnovsia-verzia"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete najnovsia-verzia --cleanup-tag --yes || true
+          gh release create najnovsia-verzia dist/RAFA-MUSIC-STUDIO-Windows.zip \
+            --title "RAFA MUSIC STUDIO - najnovsia verzia" \
+            --notes "Automaticky zostavene z commitu ${GITHUB_SHA::7}. Stiahni ZIP, rozbal a spusti RAFA MUSIC STUDIO.exe." \
+            --target "$GITHUB_SHA" \
+            --prerelease

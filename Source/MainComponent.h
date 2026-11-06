@@ -1,0 +1,97 @@
+#pragma once
+
+#include "Texts.h"
+#include "RafaLookAndFeel.h"
+#include "TrackListComponent.h"
+
+//==============================================================================
+/** Jednoduchy merac urovne vstupu (aby bolo vidiet, ze gitara "ide" do pocitaca). */
+class InputMeter : public juce::Component
+{
+public:
+    void setLevel (float linearLevel);
+    void paint (juce::Graphics&) override;
+
+private:
+    float levelDb = -100.0f, peakDb = -100.0f;
+    int peakHoldFrames = 0;
+};
+
+//==============================================================================
+/** Hlavna obrazovka RAFA MUSIC STUDIO - Etapa 1 (skuska zvuku). */
+class MainComponent : public juce::Component,
+                      private juce::Timer,
+                      private juce::ChangeListener
+{
+public:
+    explicit MainComponent (te::Engine&);
+    ~MainComponent() override;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    bool keyPressed (const juce::KeyPress&) override;
+
+private:
+    te::Engine& engine;
+    std::unique_ptr<te::Edit> edit;
+    juce::File editFile;
+    std::unique_ptr<juce::PropertiesFile> settings;
+    RafaLookAndFeel lookAndFeel;
+
+    // hlavicka
+    juce::Label titleLabel, subtitleLabel, songLabel;
+    juce::TextButton newSongButton, openSongButton, folderButton,
+                     audioSettingsButton, diagnosticsButton, exportButton;
+
+    // zvukove zariadenie
+    juce::Label deviceTitleLabel, deviceInfoLabel, inputTitleLabel;
+    juce::ComboBox inputCombo;
+    juce::StringArray inputDeviceIDs;
+    juce::ToggleButton monitorToggle;
+    InputMeter inputMeter;
+    juce::AudioDeviceManager::LevelMeter::Ptr inputLevel;
+
+    // transport
+    juce::TextButton recordButton, playButton, stopButton, rewindButton;
+    juce::Label timeLabel, statusLabel;
+
+    // stopy
+    juce::Viewport trackViewport;
+    TrackListComponent trackList;
+
+    te::AudioTrack* currentRecordingTrack = nullptr;
+    int timerTicks = 0;
+
+    // --- skladby ---
+    void createNewSong();
+    void openSong();
+    void loadEdit (const juce::File&);
+    void saveEdit();
+    void closeEdit();
+
+    // --- vstupy a zariadenia ---
+    void ensureMonoInputs();
+    void refreshInputList();
+    juce::String getSelectedInputID() const;
+    void applyMonitoring();
+    void updateDeviceInfo();
+    void showAudioSettings();
+    void runDiagnostics();
+    void exportMix();
+
+    // --- transport ---
+    void startRecording();
+    void togglePlay();
+    void stopTransport();
+    void rewind();
+    te::AudioTrack* prepareTrackForRecording();
+    void deleteTrack (te::AudioTrack&);
+    void updateTransportButtons();
+
+    void setStatus (const juce::String&, juce::Colour = RafaColours::textDim);
+
+    void timerCallback() override;
+    void changeListenerCallback (juce::ChangeBroadcaster*) override;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
+};
