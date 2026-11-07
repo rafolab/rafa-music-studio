@@ -44,6 +44,12 @@ Program je natívna Windows aplikácia. Obrazovka je HTML zobrazené vo vstavano
 8. **Kým v `ui/` nie je `index.html`**, program použije dočasnú klasickú obrazovku v C++. Tú si možno vynútiť aj podržaním **Shift** pri spustení programu (záchranný režim).
 9. **Malé kroky:** jedna zmena = jedna jasná úloha. Žiadne veľké prestavby bez dohody.
 
+## Zistenia z testu (7. 11. 2026)
+
+- Blackstar BEAM Mini posiela cez USB **4 vstupné kanály**; signál gitary je na kanáloch 1, 2 a 3, kanál 4 je ticho. Predvolený je kanál 1.
+- K dispozícii je ovládač **ASIO „Blackstar USB Audio“** (nižšia latencia). Windows Audio: 48 kHz, buffer 480, cca 30 ms.
+- Efekty komba sa nastavujú cez aplikáciu v telefóne (Bluetooth).
+
 ## Ako sa súbory dostanú do repozitára
 
 - **Claude** nahráva priamo (má prístup).
@@ -63,7 +69,7 @@ Program je natívna Windows aplikácia. Obrazovka je HTML zobrazené vo vstavano
 
 | Etapa | Obsah | Stav |
 | --- | --- | --- |
-| 1 | Skúška zvuku – nahrávanie a prehrávanie gitary (dočasná C++ obrazovka) | hotové, čaká na test s gitarou |
+| 1 | Skúška zvuku – nahrávanie a prehrávanie gitary | **otestované 7. 11. 2026 s BEAM Mini – funguje** |
 | 1b | Most HTML ↔ motor (WebView2), `API.md` v1 | hotové |
-| 1c | Obrazovka LOOP DECK Model 5 v HTML (ChatGPT) | integrované – čaká na test na Windows |
-| 2 | Tempo, metronóm, slučka (loop) | neskôr |
+| 1c | Obrazovka LOOP DECK Model 5 v HTML (ChatGPT) | **otestované na Windows – funguje** |
+| 2 | Tempo, metronóm, slučka (LOOP) – najprv `API.md` v2 (Claude), potom UI (ChatGPT) | na rade |

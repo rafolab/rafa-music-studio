@@ -467,8 +467,14 @@ void MainComponent::refreshInputList()
 
     juce::String deviceName;
 
+    // meno vstupneho zariadenia (pri Windows Audio je getName() meno vystupu, napr. reproduktorov)
     if (auto* dev = dm.deviceManager.getCurrentAudioDevice())
-        deviceName = dev->getName();
+    {
+        deviceName = dm.deviceManager.getAudioDeviceSetup().inputDeviceName;
+
+        if (deviceName.isEmpty())
+            deviceName = dev->getName();
+    }
 
     for (int i = 0; i < dm.getNumWaveInDevices(); ++i)
     {

@@ -22,8 +22,19 @@ public:
         setUsingNativeTitleBar (true);
         setContentOwned (new MainComponent (engine), true);
         setResizable (true, true);
-        setResizeLimits (980, 640, 4000, 3000);
-        centreWithSize (getWidth(), getHeight());
+        setResizeLimits (980, 600, 4000, 3000);
+
+        // okno nesmie byt vacsie ako obrazovka (notebooky maju casto mensiu pracovnu plochu)
+        int w = getWidth(), h = getHeight();
+
+        if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        {
+            auto area = display->userArea;
+            w = juce::jmin (w, area.getWidth()  - 20);
+            h = juce::jmin (h, area.getHeight() - 40);
+        }
+
+        centreWithSize (w, h);
         setVisible (true);
     }
 
