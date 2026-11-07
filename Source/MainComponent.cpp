@@ -380,6 +380,7 @@ void MainComponent::closeEdit()
 
     edit->getTransport().stop (false, false);
     saveEdit();
+    detachAllTrackMeters();
     edit->getTransport().removeChangeListener (this);
     trackList.setEdit (nullptr);
     currentRecordingTrack = nullptr;
@@ -948,6 +949,18 @@ void MainComponent::deleteTrack (te::AudioTrack& t)
             return;
 
         safeThis->edit->getTransport().stop (false, false);
+
+        // merac stopy odpojime skor, nez stopa zanikne
+        auto meterIt = safeThis->trackMeters.find (trackPtr->itemID.toString());
+
+        if (meterIt != safeThis->trackMeters.end())
+        {
+            if (meterIt->second.measurer != nullptr && meterIt->second.client != nullptr)
+                meterIt->second.measurer->removeClient (*meterIt->second.client);
+
+            safeThis->trackMeters.erase (meterIt);
+        }
+
         safeThis->edit->deleteTrack (trackPtr.get());
         safeThis->saveEdit();
         safeThis->trackList.refreshIfChanged();
@@ -986,6 +999,7 @@ void MainComponent::timerCallback()
     }
 
     checkLoopRecordingPass();
+    syncTrackMeters();
 
     if (pendingRecordingCheck)
         checkFinishedRecording();

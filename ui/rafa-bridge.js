@@ -13,7 +13,7 @@
 (function () {
     "use strict";
 
-    const API_VERSION = 2;
+    const API_VERSION = 3;
     const listeners = { state: [], tracks: [] };
     const hasEngine = typeof window.__JUCE__ !== "undefined"
                    && window.__JUCE__.backend
@@ -96,7 +96,9 @@
             tempo: { bpm: 120, numerator: 4, denominator: 4 },
             metronome: { on: false, volume: 0.5, countInBars: 1 },
             loop: { on: false, start: 0, end: 8, lengthBars: 4, canRecord: true, recordingPass: false },
-            musicalPosition: { bar: 1, beat: 1 }
+            musicalPosition: { bar: 1, beat: 1 },
+            // --- API v3 ---
+            mixer: { masterDb: 0, masterLevelDb: -100, trackLevels: [] }
         };
         let recordStart = 0;      // kde zacina nahravanie (po odpocitani)
         let loopWrapped = false;
@@ -178,7 +180,7 @@
             record () {
                 if (s.transport.recording) return s.loop.recordingPass ? finishLoopPass() : stopAll();
                 if (s.loop.on && ! s.loop.canRecord) return setStatus("Slučka je príliš krátka na nahrávanie (minimum 2 s). Predĺž ju.", "warn");
-                recordingTrack = { id: String(nextId++), name: "Gitara " + (tracks.length + 1), muted: false, recording: true, clips: [] };
+                recordingTrack = { id: String(nextId++), name: "Gitara " + (tracks.length + 1), muted: false, solo: false, volumeDb: 0, pan: 0, recording: true, clips: [] };
                 tracks.push(recordingTrack);
                 recordStart = s.loop.on ? s.loop.start : 0;
                 s.transport.position = recordStart - s.metronome.countInBars * secPerBar();
@@ -218,6 +220,11 @@
                 setStatus("Simulácia: diagnostika skopírovaná do schránky.", "ok");
             },
             uiReady () {},
+            // --- API v3: mix ---
+            trackVolume (a) { const t = tracks.find(x => x.id === a.trackId); if (t) { const db = Number(a.db) || 0; t.volumeDb = db <= -60 ? -100 : Math.min(6, Math.max(-60, Math.round(db * 10) / 10)); emitTracks(); } },
+            trackPan (a) { const t = tracks.find(x => x.id === a.trackId); if (t) { t.pan = Math.min(1, Math.max(-1, Math.round((Number(a.pan) || 0) * 100) / 100)); emitTracks(); } },
+            trackSolo (a) { const t = tracks.find(x => x.id === a.trackId); if (t) { t.solo = !! a.solo; emitTracks(); } },
+            masterVolume (a) { const db = Number(a.db) || 0; s.mixer.masterDb = db <= -60 ? -100 : Math.min(6, Math.max(-60, Math.round(db * 10) / 10)); },
             // --- API v2 ---
             setTempo (a) {
                 if (s.transport.recording) return;
@@ -283,6 +290,16 @@
             }
 
             s.transport.countingIn = s.transport.recording && s.transport.position < recordStart;
+
+            // meraky stop: pri prehravani vymyslena uroven podla hlasitosti, stlmenia a sola
+            const anySolo = tracks.some(t => t.solo);
+            s.mixer.trackLevels = tracks.map(t => {
+                const audible = s.transport.playing && t.clips.length && ! t.muted && (! anySolo || t.solo) && t.volumeDb > -60;
+                const prev = (s.mixer.trackLevels.find(l => l.id === t.id) || {}).levelDb ?? -100;
+                const target = audible ? -18 + t.volumeDb + (Math.random() - 0.5) * 12 : -100;
+                return { id: t.id, levelDb: Math.round(Math.max(target, prev - 1.5) * 10) / 10 };
+            });
+            s.mixer.masterLevelDb = s.mixer.trackLevels.reduce((m, l) => Math.max(m, l.levelDb), -100);
             const beats = s.transport.position / secPerBeat();
             s.musicalPosition = beats < 0 ? { bar: 0, beat: 0 }
                               : { bar: Math.floor(beats / s.tempo.numerator) + 1, beat: Math.floor(beats % s.tempo.numerator) + 1 };

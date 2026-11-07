@@ -125,6 +125,22 @@ private:
     double getSecondsPerBar() const;
     juce::var buildTempoLoopState();
 
+    // --- mix vrstiev (API v3) - implementacia v Mixer.cpp ---
+    struct TrackMeter
+    {
+        te::LevelMeasurer* measurer = nullptr;
+        std::unique_ptr<te::LevelMeasurer::Client> client;
+        float levelDb = -100.0f;
+    };
+    std::map<juce::String, TrackMeter> trackMeters;   // podla id stopy
+    void syncTrackMeters();
+    void detachAllTrackMeters();
+    void setTrackVolumeDb (const juce::String& trackId, double db);
+    void setTrackPan (const juce::String& trackId, double pan);
+    void setTrackSolo (const juce::String& trackId, bool solo);
+    void setMasterVolumeDb (double db);
+    juce::var buildMixerState();
+
     // --- obrazovka v HTML (ui/) - implementacia vo WebBridge.cpp ---
     std::unique_ptr<juce::WebBrowserComponent> webView;
     bool webUIActive = false;

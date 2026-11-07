@@ -11,7 +11,7 @@
 #include "Diagnostics.h"
 #include "RafaUIData.h"
 
-static constexpr int rafaApiVersion = 2;
+static constexpr int rafaApiVersion = 3;
 
 //==============================================================================
 static const char* findUIResource (const juce::String& fileName, int& size)
@@ -217,6 +217,11 @@ void MainComponent::handleWebCommand (const juce::var& message)
     else if (command == "setLoopRange")       setLoopRangeSeconds ((double) args.getProperty ("start", 0.0), (double) args.getProperty ("end", 0.0));
     else if (command == "loopIn")             setLoopPointAtPlayhead (true);
     else if (command == "loopOut")            setLoopPointAtPlayhead (false);
+    // --- API v3: mix ---
+    else if (command == "trackVolume")        setTrackVolumeDb (args.getProperty ("trackId", {}).toString(), (double) args.getProperty ("db", 0.0));
+    else if (command == "trackPan")           setTrackPan (args.getProperty ("trackId", {}).toString(), (double) args.getProperty ("pan", 0.0));
+    else if (command == "trackSolo")          setTrackSolo (args.getProperty ("trackId", {}).toString(), (bool) args.getProperty ("solo", false));
+    else if (command == "masterVolume")       setMasterVolumeDb ((double) args.getProperty ("db", 0.0));
     else
     {
         DBG ("Neznamy prikaz z UI: " << command);
@@ -323,6 +328,8 @@ juce::var MainComponent::buildStateObject()
         for (auto& p : tl->getProperties())
             obj->setProperty (p.name, p.value);
 
+    obj->setProperty ("mixer", buildMixerState());
+
     auto busy = std::make_unique<juce::DynamicObject>();
     busy->setProperty ("diagnosticsAllowed", ! playing && ! recording);
     busy->setProperty ("editingAllowed", ! recording);
@@ -407,6 +414,13 @@ juce::var MainComponent::buildTracksObject()
             obj->setProperty ("id", t->itemID.toString());
             obj->setProperty ("name", t->getName());
             obj->setProperty ("muted", t->isMuted (false));
+            obj->setProperty ("solo", t->isSolo (false));
+
+            if (auto* vol = t->getVolumePlugin())
+            {
+                obj->setProperty ("volumeDb", juce::roundToInt (vol->getVolumeDb() * 10.0f) / 10.0);
+                obj->setProperty ("pan", juce::roundToInt (vol->getPan() * 100.0f) / 100.0);
+            }
             obj->setProperty ("recording", tr.isRecording() && t == currentRecordingTrack);
 
             juce::Array<juce::var> clips;
@@ -452,7 +466,11 @@ void MainComponent::sendTracksToWebIfChanged (bool force)
 
         for (auto* t : te::getAudioTracks (*edit))
         {
-            sig << "|" << t->itemID.toString() << ":" << t->getName() << ":" << (int) t->isMuted (false);
+            sig << "|" << t->itemID.toString() << ":" << t->getName() << ":" << (int) t->isMuted (false)
+                << ":" << (int) t->isSolo (false);
+
+            if (auto* vol = t->getVolumePlugin())
+                sig << ":" << juce::String (vol->getVolumeDb(), 1) << ":" << juce::String (vol->getPan(), 2);
 
             for (auto* c : t->getClips())
             {

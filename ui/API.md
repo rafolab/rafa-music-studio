@@ -1,6 +1,6 @@
 # RAFA MUSIC STUDIO – API medzi obrazovkou (HTML) a motorom (C++)
 
-**Verzia API: 2**  ·  vlastník mosta: Claude  ·  zmeny len po dohode (pozri `KOORDINACIA.md`)
+**Verzia API: 3**  ·  vlastník mosta: Claude  ·  zmeny len po dohode (pozri `KOORDINACIA.md`)
 
 Obrazovka používa iba dve funkcie z `ui/rafa-bridge.js`:
 
@@ -10,7 +10,7 @@ Rafa.send("selectInput", { id: "in-1" });   // príkaz s parametrami
 Rafa.on("state",  s => { ... });            // pravidelný stav (cca 20× za sekundu)
 Rafa.on("tracks", t => { ... });            // zoznam stôp (len keď sa zmení)
 Rafa.isSimulation                           // true = otvorené v prehliadači bez programu
-Rafa.apiVersion                             // 2
+Rafa.apiVersion                             // 3
 ```
 
 `rafa-bridge.js` načítaj ako prvý skript: `<script src="rafa-bridge.js"></script>`.
@@ -57,6 +57,17 @@ Klávesové skratky rieši UI a posiela príkazy: **R** → `record`, **medzern�
 | `loopIn` | – | LOOP IN = aktuálna pozícia prehrávacej hlavy, zarovnaná na najbližšiu dobu. Ak by bol za LOOP OUT, slučka si zachová dĺžku. |
 | `loopOut` | – | LOOP OUT = aktuálna pozícia, zarovnaná na najbližšiu dobu. Musí byť za LOOP IN, inak sa ignoruje a v `status` príde upozornenie. |
 
+### Príkazy pridané v API 3 – mix vrstiev
+
+| Príkaz | Parametre | Čo spraví |
+| --- | --- | --- |
+| `trackVolume` | `{ trackId: string, db: number }` | Hlasitosť stopy v dB, rozsah −60 až +6. Hodnota ≤ −60 = ticho (stav vráti −100). 0 dB = bez zmeny. |
+| `trackPan` | `{ trackId: string, pan: −1…1 }` | Panoráma stopy: −1 vľavo, 0 stred, 1 vpravo. |
+| `trackSolo` | `{ trackId: string, solo: boolean }` | Sólo: ak má aspoň jedna stopa sólo, počuť len stopy so sólom. Môže ich byť viac. |
+| `masterVolume` | `{ db: number }` | Hlavná hlasitosť (−60 až +6 dB, ≤ −60 = ticho). |
+
+Mix sa dá meniť kedykoľvek, aj počas prehrávania a nahrávania. Ukladá sa do skladby. `trackMute` (z API 1) ostáva bez zmeny – stlmenie a sólo sú nezávislé.
+
 Všetky nastavenia tempa, metronómu a slučky sa ukladajú do skladby. Nová skladba: 120 BPM, 4/4, metronóm vypnutý, odpočítanie 1 takt, slučka 4 takty od 0 s (vypnutá).
 
 ### Správanie transportu (API 2)
@@ -99,7 +110,13 @@ Počas nahrávania sa ignorujú: `seek`, `rewind`, zmena tempa, metra, odpočít
   "metronome": { "on": false, "volume": 0.5, "countInBars": 1 },
   "loop":      { "on": true, "start": 0.0, "end": 8.0, "lengthBars": 4,
                  "canRecord": true, "recordingPass": false },
-  "musicalPosition": { "bar": 3, "beat": 2 }
+  "musicalPosition": { "bar": 3, "beat": 2 },
+
+  "mixer": {
+    "masterDb": 0.0,
+    "masterLevelDb": -14.2,
+    "trackLevels": [ { "id": "1001", "levelDb": -16.8 }, { "id": "1002", "levelDb": -100 } ]
+  }
 }
 ```
 
@@ -110,6 +127,11 @@ Polia pridané v API 2:
 - `metronome` – metronóm, hlasitosť 0–1, odpočítanie v taktoch.
 - `loop` – slučka: `start`/`end` v sekundách, `lengthBars` (môže byť desatinné), `canRecord` (dĺžka ≥ 2 s), `recordingPass` (`true` = práve sa nahráva vrstva slučky).
 - `musicalPosition` – takt a doba prehrávacej hlavy (od 1); počas odpočítania `0`/`0`.
+
+Polia pridané v API 3:
+- `mixer.masterDb` – hlavná hlasitosť v dB (−100 = ticho).
+- `mixer.trackLevels` – aktuálna úroveň signálu každej stopy pri prehrávaní (dB, −100 = ticho), na meradlá kanálov a VU metre. Úroveň je za hlasitosťou a panorámou stopy.
+- `mixer.masterLevelDb` – najvyššia z úrovní stôp (približná úroveň výstupu).
 
 Poznámky:
 - `meter.inputDb` je v dB: −100 = ticho, 0 = maximum. Odporúčané pásma: zelená do −12, žltá do −3, červená nad −3.
@@ -129,6 +151,9 @@ Poznámky:
       "id": "1001",
       "name": "Gitara 1",
       "muted": false,
+      "solo": false,
+      "volumeDb": 0.0,
+      "pan": 0.0,
       "recording": false,
       "clips": [
         { "start": 0.0, "length": 31.5, "peaks": [0.02, 0.4, 0.71, ...] }
@@ -143,6 +168,8 @@ Poznámky:
 - `viewLength` je odporúčaná dĺžka viditeľnej časovej osi v sekundách (časová os v UI = 0 až `viewLength`).
 - Prehrávaciu hlavu kresli podľa `state.transport.position`.
 - Stopa s `recording: true` je tá, do ktorej sa práve nahráva (zvýrazniť červenou).
+- API 3: `solo`, `volumeDb` (−100 = ticho) a `pan` (−1…1) každej stopy. Udalosť `tracks` príde aj pri zmene týchto hodnôt.
+- Panel Model 5 má 4 kanály: kanál 1–4 = prvé 4 stopy v poradí `tracks` (rovnako ako tlačidlá M).
 
 ---
 
@@ -159,4 +186,5 @@ Poznámky:
 | Verzia | Zmena |
 | --- | --- |
 | 1 | Prvá verzia: transport, vstup, merač, stopy, skladby, export, diagnostika |
+| 3 | Mix: `trackVolume`, `trackPan`, `trackSolo`, `masterVolume`; v `tracks` pribudli `solo`, `volumeDb`, `pan`; v `state` pribudol `mixer` (úrovne stôp) |
 | 2 | Tempo, metrum, metronóm, odpočítanie, LOOP (IN/OUT/dĺžka v taktoch, nahrávanie vrstiev v slučke), `transport.countingIn`, `musicalPosition`, kláves L |
