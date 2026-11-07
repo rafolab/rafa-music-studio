@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="sk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>RAFA MUSIC STUDIO · LOOP DECK</title>
+  <script src="rafa-bridge.js"></script>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="workspace">
+    <header class="workspace-top">
+      <span class="brand-small"><span class="orange-led"></span> RAFA MUSIC STUDIO <span class="brand-sub">/ LOOP DECK</span></span>
+      <span id="environment" class="environment">PRIPÁJANIE…</span>
+      <span class="hint">R nahrávanie <span>·</span> medzerník prehrávanie <span>·</span> Home začiatok</span>
+    </header>
+
+    <main>
+      <h1 class="sr-only">RAFA MUSIC STUDIO – ovládanie nahrávania</h1>
+      <!-- Celá predná plocha reprodukuje schválený Model 5. Všetky klikacie plochy sú HTML tlačidlá. -->
+      <section id="deck" class="deck" aria-label="Virtuálna nahrávacia konzola">
+        <div class="screen-inset" aria-label="Displej skladby" role="region">
+          <div class="screen-head">
+            <span class="screen-song">Projekt: <strong id="songName">Načítavam…</strong></span>
+            <span id="screenMode" class="screen-mode">PRIPRAVENÉ</span>
+          </div>
+          <div class="screen-time-row">
+            <strong class="digital-time" id="transportTime">0:00.000</strong>
+            <span id="screenLength" class="screen-length" title="Dĺžka skladby">0:00</span>
+          </div>
+          <div class="screen-lanes" id="screenLanes" aria-label="Vlnové priebehy stôp">
+            <div class="screen-empty">Zatiaľ žiadna stopa. Stlač <b>REC</b> a zahraj na gitare.</div>
+          </div>
+          <div id="screenPlayhead" class="screen-playhead" aria-hidden="true"></div>
+        </div>
+
+        <span class="vu-motion vu-left" aria-hidden="true"><span class="vu-needle" id="vuNeedleL"></span></span>
+        <span class="vu-motion vu-right" aria-hidden="true"><span class="vu-needle" id="vuNeedleR"></span></span>
+
+        <!-- presné interaktívne oblasti pôvodného hardvérového návrhu -->
+        <button type="button" class="hotspot" id="projectButton" style="--x:80.9%;--y:14.8%;--w:7%;--h:4.9%" aria-haspopup="true" aria-expanded="false" aria-controls="projectMenu" aria-label="Projekt – nová alebo otvorená skladba"></button>
+        <button type="button" class="hotspot" id="tracksButton" style="--x:80.9%;--y:20.7%;--w:7%;--h:4.7%" aria-expanded="false" aria-controls="tracksPanel" aria-label="Zobraziť alebo skryť stopy"></button>
+        <button type="button" class="hotspot unavailable" style="--x:80.9%;--y:26.4%;--w:7%;--h:4.6%" disabled title="Efekty pribudnú v ďalšej etape" aria-label="Efekty – zatiaľ nedostupné"></button>
+        <button type="button" class="hotspot" data-command="openAudioSettings" data-edit="1" style="--x:80.9%;--y:32%;--w:7%;--h:4.5%" aria-label="Nastavenia zvuku" title="Otvoriť nastavenia zvuku"></button>
+
+        <button type="button" class="hotspot steel" data-command="rewind" style="--x:42.8%;--y:46.8%;--w:5.9%;--h:8.5%" aria-label="Na začiatok" title="Na začiatok (Home)"></button>
+        <button type="button" class="hotspot steel" data-command="stop" style="--x:49.3%;--y:46.5%;--w:6.1%;--h:9%" aria-label="STOP" title="Zastaviť"></button>
+        <button type="button" class="hotspot steel" id="playButton" data-command="togglePlay" style="--x:55.9%;--y:46.5%;--w:6.15%;--h:9%" aria-label="PREHRAŤ" title="Prehrať / zastaviť (medzerník)"></button>
+        <button type="button" class="hotspot rec" id="recordButton" data-command="record" style="--x:62.7%;--y:45.6%;--w:7%;--h:9.5%" aria-label="NAHRÁVAŤ" title="Nahrávanie gitary (R)"></button>
+
+        <button type="button" class="hotspot unavailable" style="--x:73.7%;--y:45.4%;--w:5.7%;--h:9.0%" disabled title="LOOP IN – etapa 4" aria-label="LOOP IN – zatiaľ nedostupné"></button>
+        <button type="button" class="hotspot unavailable" style="--x:80.0%;--y:45.4%;--w:5.7%;--h:9.0%" disabled title="LOOP OUT – etapa 4" aria-label="LOOP OUT – zatiaľ nedostupné"></button>
+        <button type="button" class="hotspot unavailable" style="--x:86.2%;--y:45.2%;--w:6.3%;--h:9.2%" disabled title="Slučky pribudnú v etape 4" aria-label="LOOP – zatiaľ nedostupné"></button>
+        <button type="button" class="hotspot unavailable" style="--x:77.9%;--y:63.4%;--w:4.3%;--h:7.6%" disabled title="Metronóm pribudne v etape 2" aria-label="Metronóm – zatiaľ nedostupný"></button>
+        <button type="button" class="hotspot unavailable" style="--x:87.2%;--y:61.4%;--w:4.4%;--h:8.0%" disabled title="Nastavenie tempa – etapa 2" aria-label="Tempo – zatiaľ nedostupné"></button>
+
+        <button type="button" class="hotspot bank" data-slot="0" style="--x:44.4%;--y:63.3%;--w:4.8%;--h:7.7%" aria-label="Detail prvej vrstvy" title="Detail prvej vrstvy"></button>
+        <button type="button" class="hotspot bank" data-slot="1" style="--x:49.5%;--y:63.3%;--w:4.8%;--h:7.7%" aria-label="Detail druhej vrstvy" title="Detail druhej vrstvy"></button>
+        <button type="button" class="hotspot bank" data-slot="2" style="--x:54.6%;--y:63.3%;--w:4.8%;--h:7.7%" aria-label="Detail tretej vrstvy" title="Detail tretej vrstvy"></button>
+        <button type="button" class="hotspot bank" data-slot="3" style="--x:59.5%;--y:63.3%;--w:4.8%;--h:7.7%" aria-label="Detail štvrtej vrstvy" title="Detail štvrtej vrstvy"></button>
+        <button type="button" class="hotspot unavailable" style="--x:64.8%;--y:63.3%;--w:4.6%;--h:7.7%" disabled title="Ďalšie vrstvy sa vytvárajú tlačidlom REC" aria-label="Nová vrstva – použite REC"></button>
+
+        <button type="button" class="hotspot mute" data-mute-slot="0" style="--x:14.0%;--y:80.9%;--w:3.0%;--h:5.5%" aria-label="Stlmiť prvú stopu"></button>
+        <button type="button" class="hotspot mute" data-mute-slot="1" style="--x:23.0%;--y:80.9%;--w:3.0%;--h:5.5%" aria-label="Stlmiť druhú stopu"></button>
+        <button type="button" class="hotspot mute" data-mute-slot="2" style="--x:32.2%;--y:80.9%;--w:3.0%;--h:5.5%" aria-label="Stlmiť tretiu stopu"></button>
+        <button type="button" class="hotspot mute" data-mute-slot="3" style="--x:40.7%;--y:80.9%;--w:3.0%;--h:5.5%" aria-label="Stlmiť štvrtú stopu"></button>
+
+        <div class="hardware-note" title="V etapách 2–5 motor doplní príkazy pre tempo, loop, mix a efekty.">VIZUÁLNY MODEL 5 · ETAPA 1</div>
+      </section>
+
+      <div id="projectMenu" class="project-menu" hidden>
+        <div class="project-menu-head">SPRÁVA SKLADBY</div>
+        <button type="button" data-command="newSong" data-edit="1">Nová skladba</button>
+        <button type="button" data-command="openSong" data-edit="1">Otvoriť skladbu</button>
+        <button type="button" data-command="openSongFolder">Priečinok skladby</button>
+        <button type="button" data-command="exportMix" data-edit="1">Export mixu (WAV)</button>
+      </div>
+
+      <!-- spodný technický pás je úmyselne mimo pôvodnej fotografie – len funkcie API v1 -->
+      <section class="connection-rack" aria-label="Pripojenie gitary a technické informácie">
+        <div class="rack-block rack-input">
+          <div class="rack-heading"><span class="rack-indicator"></span> GITAROVÝ VSTUP</div>
+          <label for="inputSelect" class="sr-only">Výber gitarového vstupu</label>
+          <select id="inputSelect" aria-label="Výber vstupu pre gitaru"><option value="">Načítavam vstupy…</option></select>
+          <label class="monitor-switch"><input type="checkbox" id="monitorCheck"><span class="switch-visual"></span><span>Počúvať vstup cez počítač</span></label>
+          <small class="rack-note">Pri hraní cez Blackstar nechaj odposluch vypnutý, aby sa zvuk nezdvojoval.</small>
+        </div>
+        <div class="rack-block rack-meter">
+          <div class="rack-heading">ÚROVEŇ VSTUPU</div>
+          <div class="meter-row"><div class="meter-groove" role="meter" aria-label="Úroveň gitarového vstupu" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-100" id="digitalMeter"><span class="meter-fill" id="meterFill"></span></div><output id="dbValue">−∞ dB</output></div>
+          <div class="meter-ticks"><span>−60</span><span>−36</span><span>−24</span><span>−12</span><span>−3</span><span>0</span></div>
+          <div class="rack-footer" id="deviceHealth">Čakám na informácie o zariadení…</div>
+        </div>
+        <div class="rack-block rack-device">
+          <div class="rack-heading">ZVUKOVÉ ZARIADENIE</div>
+          <div class="device-summary" id="deviceSummary">Načítavam…</div>
+          <div class="rack-actions"><button type="button" class="rack-button" data-command="openAudioSettings" data-edit="1">Nastavenia zvuku</button><button type="button" class="rack-button" data-command="runDiagnostics" id="diagnosticsButton" data-diagnostics="1">Diagnostika</button></div>
+        </div>
+      </section>
+
+      <section class="tracks-panel" id="tracksPanel" aria-label="Stopy a úpravy" hidden>
+        <div class="tracks-panel-heading"><h2>NAHRANÉ STOPY</h2><span>Každé REC vytvorí novú vrstvu. Klikni na vlnu, ak chceš posunúť prehrávanie.</span></div>
+        <div id="trackRows" class="track-rows"><p class="track-empty">Zatiaľ nemáš nahranú žiadnu stopu.</p></div>
+      </section>
+    </main>
+
+    <footer class="statusbar" role="status" aria-live="polite">
+      <span class="status-led" id="statusLed"></span><span id="statusText">Pripájam sa k nahrávaciemu motoru…</span>
+      <span class="status-separator"></span><span id="sessionMode">API v1</span>
+    </footer>
+  </div>
+</body>
+</html>

@@ -64,6 +64,6 @@ Program je natívna Windows aplikácia. Obrazovka je HTML zobrazené vo vstavano
 | Etapa | Obsah | Stav |
 | --- | --- | --- |
 | 1 | Skúška zvuku – nahrávanie a prehrávanie gitary (dočasná C++ obrazovka) | hotové, čaká na test s gitarou |
-| 1b | Most HTML ↔ motor (WebView2), `API.md` v1 | hotové – čaká na `ui/index.html` od ChatGPT |
-| 1c | Dizajn obrazovky v HTML podľa `API.md` v1 | ChatGPT – na rade |
+| 1b | Most HTML ↔ motor (WebView2), `API.md` v1 | hotové |
+| 1c | Obrazovka LOOP DECK Model 5 v HTML (ChatGPT) | integrované – čaká na test na Windows |
 | 2 | Tempo, metronóm, slučka (loop) | neskôr |
