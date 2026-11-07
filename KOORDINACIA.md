@@ -73,4 +73,4 @@ Program je natívna Windows aplikácia. Obrazovka je HTML zobrazené vo vstavano
 | 1b | Most HTML ↔ motor (WebView2), `API.md` v1 | hotové |
 | 1c | Obrazovka LOOP DECK Model 5 v HTML (ChatGPT) | **otestované na Windows – funguje** |
 | 2 | Tempo, metronóm, slučka (LOOP): `API.md` v2 + motor + simulácia (Claude) | hotové, overené v simulovanom zvukovom prostredí |
-| 2c | Oživenie ovládačov LOOP, METRONÓM, TEMPO v HTML podľa `API.md` v2 (ChatGPT) | na rade |
+| 2c | Oživenie ovládačov LOOP, METRONÓM, TEMPO v HTML podľa `API.md` v2 | hotové – **jednorazová výnimka: zapracoval Claude** (ZIP od ChatGPT sa nedal stiahnuť); kontrolu UI robí ChatGPT |

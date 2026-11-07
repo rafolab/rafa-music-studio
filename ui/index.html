@@ -14,7 +14,7 @@
     <header class="workspace-top">
       <span class="brand-small"><span class="orange-led"></span> RAFA MUSIC STUDIO <span class="brand-sub">/ LOOP DECK</span></span>
       <span id="environment" class="environment">PRIPÁJANIE…</span>
-      <span class="hint">R nahrávanie <span>·</span> medzerník prehrávanie <span>·</span> Home začiatok</span>
+      <span class="hint">R nahrávanie <span>·</span> medzerník prehrávanie <span>·</span> Home začiatok <span>·</span> L slučka</span>
     </header>
 
     <main>
@@ -28,8 +28,9 @@
           </div>
           <div class="screen-time-row">
             <strong class="digital-time" id="transportTime">0:00.000</strong>
-            <span id="screenLength" class="screen-length" title="Dĺžka skladby">0:00</span>
+            <span id="screenLength" class="screen-length">0:00</span>
           </div>
+          <div id="screenBeat" class="screen-beat" aria-label="Takt, doba, tempo a slučka">T 1.1 · 120 BPM · 4/4</div>
           <div class="screen-lanes" id="screenLanes" aria-label="Vlnové priebehy stôp">
             <div class="screen-empty">Zatiaľ žiadna stopa. Stlač <b>REC</b> a zahraj na gitare.</div>
           </div>
@@ -42,32 +43,34 @@
         <!-- presné interaktívne oblasti pôvodného hardvérového návrhu -->
         <button type="button" class="hotspot" id="projectButton" style="--x:80.9%;--y:14.8%;--w:7%;--h:4.9%" aria-haspopup="true" aria-expanded="false" aria-controls="projectMenu" aria-label="Projekt – nová alebo otvorená skladba"></button>
         <button type="button" class="hotspot" id="tracksButton" style="--x:80.9%;--y:20.7%;--w:7%;--h:4.7%" aria-expanded="false" aria-controls="tracksPanel" aria-label="Zobraziť alebo skryť stopy"></button>
-        <button type="button" class="hotspot unavailable" style="--x:80.9%;--y:26.4%;--w:7%;--h:4.6%" disabled title="Efekty pribudnú v ďalšej etape" aria-label="Efekty – zatiaľ nedostupné"></button>
-        <button type="button" class="hotspot" data-command="openAudioSettings" data-edit="1" style="--x:80.9%;--y:32%;--w:7%;--h:4.5%" aria-label="Nastavenia zvuku" title="Otvoriť nastavenia zvuku"></button>
+        <button type="button" class="hotspot unavailable" style="--x:80.9%;--y:26.4%;--w:7%;--h:4.6%" disabled aria-label="Efekty – zatiaľ nedostupné"></button>
+        <button type="button" class="hotspot" data-command="openAudioSettings" data-edit="1" style="--x:80.9%;--y:32%;--w:7%;--h:4.5%" aria-label="Nastavenia zvuku"></button>
 
-        <button type="button" class="hotspot steel" data-command="rewind" style="--x:42.8%;--y:46.8%;--w:5.9%;--h:8.5%" aria-label="Na začiatok" title="Na začiatok (Home)"></button>
-        <button type="button" class="hotspot steel" data-command="stop" style="--x:49.3%;--y:46.5%;--w:6.1%;--h:9%" aria-label="STOP" title="Zastaviť"></button>
-        <button type="button" class="hotspot steel" id="playButton" data-command="togglePlay" style="--x:55.9%;--y:46.5%;--w:6.15%;--h:9%" aria-label="PREHRAŤ" title="Prehrať / zastaviť (medzerník)"></button>
-        <button type="button" class="hotspot rec" id="recordButton" data-command="record" style="--x:62.7%;--y:45.6%;--w:7%;--h:9.5%" aria-label="NAHRÁVAŤ" title="Nahrávanie gitary (R)"></button>
+        <button type="button" class="hotspot steel" data-command="rewind" style="--x:42.8%;--y:46.8%;--w:5.9%;--h:8.5%" aria-label="Na začiatok"></button>
+        <button type="button" class="hotspot steel" data-command="stop" style="--x:49.3%;--y:46.5%;--w:6.1%;--h:9%" aria-label="STOP"></button>
+        <button type="button" class="hotspot steel" id="playButton" data-command="togglePlay" style="--x:55.9%;--y:46.5%;--w:6.15%;--h:9%" aria-label="PREHRAŤ"></button>
+        <button type="button" class="hotspot rec" id="recordButton" data-command="record" style="--x:62.7%;--y:45.6%;--w:7%;--h:9.5%" aria-label="NAHRÁVAŤ"></button>
 
-        <button type="button" class="hotspot unavailable" style="--x:73.7%;--y:45.4%;--w:5.7%;--h:9.0%" disabled title="LOOP IN – etapa 4" aria-label="LOOP IN – zatiaľ nedostupné"></button>
-        <button type="button" class="hotspot unavailable" style="--x:80.0%;--y:45.4%;--w:5.7%;--h:9.0%" disabled title="LOOP OUT – etapa 4" aria-label="LOOP OUT – zatiaľ nedostupné"></button>
-        <button type="button" class="hotspot unavailable" style="--x:86.2%;--y:45.2%;--w:6.3%;--h:9.2%" disabled title="Slučky pribudnú v etape 4" aria-label="LOOP – zatiaľ nedostupné"></button>
-        <button type="button" class="hotspot unavailable" style="--x:77.9%;--y:63.4%;--w:4.3%;--h:7.6%" disabled title="Metronóm pribudne v etape 2" aria-label="Metronóm – zatiaľ nedostupný"></button>
-        <button type="button" class="hotspot unavailable" style="--x:87.2%;--y:61.4%;--w:4.4%;--h:8.0%" disabled title="Nastavenie tempa – etapa 2" aria-label="Tempo – zatiaľ nedostupné"></button>
+        <button type="button" class="hotspot steel loop-point" id="loopInButton" data-command="loopIn" data-edit="1" style="--x:73.7%;--y:45.4%;--w:5.7%;--h:9.0%" aria-label="LOOP IN – začiatok slučky na pozícii prehrávania"></button>
+        <button type="button" class="hotspot steel loop-point" id="loopOutButton" data-command="loopOut" data-edit="1" style="--x:80.0%;--y:45.4%;--w:5.7%;--h:9.0%" aria-label="LOOP OUT – koniec slučky na pozícii prehrávania"></button>
+        <button type="button" class="hotspot loop-toggle" id="loopToggleButton" data-command="toggleLoop" data-edit="1" style="--x:86.2%;--y:45.2%;--w:6.3%;--h:9.2%" aria-pressed="false" aria-label="LOOP – zapnúť alebo vypnúť slučku (L)"></button>
+        <button type="button" class="hotspot knob" id="metroKnob" style="--x:73.1%;--y:59.0%;--w:4.3%;--h:8.4%" aria-label="Hlasitosť metronómu – koliesko myši"></button>
+        <button type="button" class="hotspot metro-on" id="metroButton" style="--x:77.9%;--y:63.4%;--w:4.3%;--h:7.6%" aria-pressed="false" aria-label="Metronóm zapnúť alebo vypnúť"></button>
+        <button type="button" class="hotspot knob" id="tempoKnob" style="--x:87.2%;--y:61.4%;--w:4.4%;--h:8.0%" aria-label="Tempo – koliesko myši mení BPM (so Shift po 5)"></button>
+        <span class="metro-led" id="metroLed" aria-hidden="true"></span>
 
-        <button type="button" class="hotspot bank" data-slot="0" style="--x:44.4%;--y:63.3%;--w:4.8%;--h:7.7%" aria-label="Detail prvej vrstvy" title="Detail prvej vrstvy"></button>
-        <button type="button" class="hotspot bank" data-slot="1" style="--x:49.5%;--y:63.3%;--w:4.8%;--h:7.7%" aria-label="Detail druhej vrstvy" title="Detail druhej vrstvy"></button>
-        <button type="button" class="hotspot bank" data-slot="2" style="--x:54.6%;--y:63.3%;--w:4.8%;--h:7.7%" aria-label="Detail tretej vrstvy" title="Detail tretej vrstvy"></button>
-        <button type="button" class="hotspot bank" data-slot="3" style="--x:59.5%;--y:63.3%;--w:4.8%;--h:7.7%" aria-label="Detail štvrtej vrstvy" title="Detail štvrtej vrstvy"></button>
-        <button type="button" class="hotspot unavailable" style="--x:64.8%;--y:63.3%;--w:4.6%;--h:7.7%" disabled title="Ďalšie vrstvy sa vytvárajú tlačidlom REC" aria-label="Nová vrstva – použite REC"></button>
+        <button type="button" class="hotspot bank" data-slot="0" style="--x:44.4%;--y:63.3%;--w:4.8%;--h:7.7%" aria-label="Detail prvej vrstvy"></button>
+        <button type="button" class="hotspot bank" data-slot="1" style="--x:49.5%;--y:63.3%;--w:4.8%;--h:7.7%" aria-label="Detail druhej vrstvy"></button>
+        <button type="button" class="hotspot bank" data-slot="2" style="--x:54.6%;--y:63.3%;--w:4.8%;--h:7.7%" aria-label="Detail tretej vrstvy"></button>
+        <button type="button" class="hotspot bank" data-slot="3" style="--x:59.5%;--y:63.3%;--w:4.8%;--h:7.7%" aria-label="Detail štvrtej vrstvy"></button>
+        <button type="button" class="hotspot unavailable" style="--x:64.8%;--y:63.3%;--w:4.6%;--h:7.7%" disabled aria-label="Nová vrstva – použite REC"></button>
 
         <button type="button" class="hotspot mute" data-mute-slot="0" style="--x:14.0%;--y:80.9%;--w:3.0%;--h:5.5%" aria-label="Stlmiť prvú stopu"></button>
         <button type="button" class="hotspot mute" data-mute-slot="1" style="--x:23.0%;--y:80.9%;--w:3.0%;--h:5.5%" aria-label="Stlmiť druhú stopu"></button>
         <button type="button" class="hotspot mute" data-mute-slot="2" style="--x:32.2%;--y:80.9%;--w:3.0%;--h:5.5%" aria-label="Stlmiť tretiu stopu"></button>
         <button type="button" class="hotspot mute" data-mute-slot="3" style="--x:40.7%;--y:80.9%;--w:3.0%;--h:5.5%" aria-label="Stlmiť štvrtú stopu"></button>
 
-        <div class="hardware-note" title="V etapách 2–5 motor doplní príkazy pre tempo, loop, mix a efekty.">VIZUÁLNY MODEL 5 · ETAPA 1</div>
+        <div class="hardware-note">VIZUÁLNY MODEL 5 · ETAPA 2</div>
       </section>
 
       <div id="projectMenu" class="project-menu" hidden>
@@ -100,6 +103,53 @@
         </div>
       </section>
 
+      <!-- API v2: tempo, metronóm, slučka – rovnaký štýl ako pás pripojenia -->
+      <section class="connection-rack rhythm-rack" aria-label="Tempo, metronóm a slučka">
+        <div class="rack-block">
+          <div class="rack-heading"><span class="rack-indicator"></span> TEMPO A METRUM</div>
+          <div class="ctrl-row">
+            <button type="button" class="rack-button step" id="tempoDown" data-loopedit="1" aria-label="Tempo −1 BPM">−</button>
+            <label class="tempo-field"><input type="number" id="tempoInput" min="40" max="240" step="1" value="120" data-loopedit="1" aria-label="Tempo v BPM"><span>BPM</span></label>
+            <button type="button" class="rack-button step" id="tempoUp" data-loopedit="1" aria-label="Tempo +1 BPM">+</button>
+            <label for="meterSelect" class="sr-only">Metrum</label>
+            <select id="meterSelect" data-loopedit="1" aria-label="Metrum">
+              <option value="2/4">2/4</option><option value="3/4">3/4</option><option value="4/4" selected>4/4</option>
+              <option value="5/4">5/4</option><option value="6/8">6/8</option><option value="7/8">7/8</option>
+            </select>
+          </div>
+          <small class="rack-note">Koliesko myši na gombíku TEMPO: ±1 BPM, so Shift ±5.</small>
+        </div>
+        <div class="rack-block">
+          <div class="rack-heading">METRONÓM A ODPOČÍTANIE</div>
+          <div class="ctrl-row">
+            <label class="monitor-switch"><input type="checkbox" id="metroCheck"><span class="switch-visual"></span><span>Metronóm</span></label>
+            <label class="volume-field"><span>Hlasitosť</span><input type="range" id="metroVolume" min="0" max="1" step="0.05" value="0.5" aria-label="Hlasitosť metronómu"></label>
+          </div>
+          <div class="ctrl-row">
+            <span class="ctrl-label">Odpočítanie</span>
+            <div class="seg" id="countInSeg" role="group" aria-label="Odpočítanie pred nahrávaním v taktoch">
+              <button type="button" data-bars="0" data-loopedit="1">0</button><button type="button" data-bars="1" data-loopedit="1">1</button><button type="button" data-bars="2" data-loopedit="1">2</button>
+            </div>
+            <span class="ctrl-unit">takty</span>
+          </div>
+        </div>
+        <div class="rack-block">
+          <div class="rack-heading">SLUČKA (LOOP)</div>
+          <div class="ctrl-row">
+            <label class="monitor-switch"><input type="checkbox" id="loopCheck" data-loopedit="1"><span class="switch-visual"></span><span>Slučka zapnutá</span></label>
+            <span class="loop-range" id="loopRange">0:00.0 – 0:08.0</span>
+          </div>
+          <div class="ctrl-row">
+            <span class="ctrl-label">Dĺžka</span>
+            <div class="seg" id="loopBarsSeg" role="group" aria-label="Dĺžka slučky v taktoch">
+              <button type="button" data-bars="1" data-loopedit="1">1</button><button type="button" data-bars="2" data-loopedit="1">2</button><button type="button" data-bars="4" data-loopedit="1">4</button><button type="button" data-bars="8" data-loopedit="1">8</button>
+            </div>
+            <input type="number" id="loopBarsInput" min="1" max="32" step="1" value="4" data-loopedit="1" aria-label="Vlastná dĺžka slučky v taktoch (1–32)">
+            <span class="ctrl-unit">taktov</span>
+          </div>
+        </div>
+      </section>
+
       <section class="tracks-panel" id="tracksPanel" aria-label="Stopy a úpravy" hidden>
         <div class="tracks-panel-heading"><h2>NAHRANÉ STOPY</h2><span>Každé REC vytvorí novú vrstvu. Klikni na vlnu, ak chceš posunúť prehrávanie.</span></div>
         <div id="trackRows" class="track-rows"><p class="track-empty">Zatiaľ nemáš nahranú žiadnu stopu.</p></div>
@@ -108,7 +158,7 @@
 
     <footer class="statusbar" role="status" aria-live="polite">
       <span class="status-led" id="statusLed"></span><span id="statusText">Pripájam sa k nahrávaciemu motoru…</span>
-      <span class="status-separator"></span><span id="sessionMode">API v1</span>
+      <span class="status-separator"></span><span id="sessionMode">API v2</span>
     </footer>
   </div>
 </body>

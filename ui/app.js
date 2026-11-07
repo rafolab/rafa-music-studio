@@ -1,4 +1,4 @@
-/* RAFA MUSIC STUDIO · etapa 1c · obrazovka Model 5.
+/* RAFA MUSIC STUDIO · etapa 2c · obrazovka Model 5 (API v2: tempo, metronóm, LOOP).
  * Motor komunikácie vlastní Claude. Tento súbor používa výhradne Rafa.send() a Rafa.on().
  * Žiadne nahrávanie, ukladanie ani spracovanie zvuku sa tu nevykonáva.
  */
@@ -16,7 +16,13 @@
     status: $('statusText'), statusLed: $('statusLed'), sessionMode: $('sessionMode'),
     projectMenu: $('projectMenu'), projectButton: $('projectButton'), tracksButton: $('tracksButton'),
     tracksPanel: $('tracksPanel'), trackRows: $('trackRows'),
-    vuL: $('vuNeedleL'), vuR: $('vuNeedleR'), record: $('recordButton'), play: $('playButton')
+    vuL: $('vuNeedleL'), vuR: $('vuNeedleR'), record: $('recordButton'), play: $('playButton'),
+    // API v2
+    screenBeat: $('screenBeat'), loopToggle: $('loopToggleButton'), metroButton: $('metroButton'),
+    metroKnob: $('metroKnob'), tempoKnob: $('tempoKnob'), metroLed: $('metroLed'),
+    tempoInput: $('tempoInput'), tempoDown: $('tempoDown'), tempoUp: $('tempoUp'), meterSelect: $('meterSelect'),
+    metroCheck: $('metroCheck'), metroVolume: $('metroVolume'), countInSeg: $('countInSeg'),
+    loopCheck: $('loopCheck'), loopRange: $('loopRange'), loopBarsSeg: $('loopBarsSeg'), loopBarsInput: $('loopBarsInput')
   };
 
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -82,9 +88,135 @@
     if (event.key === 'Escape') { closeProjectMenu(); return; }
     const key = event.key.toLowerCase();
     if (key === 'r') { event.preventDefault(); send('record'); }
+    else if (key === 'l') { event.preventDefault(); if (canEdit()) send('toggleLoop'); }
     else if (event.code === 'Space') { event.preventDefault(); send('togglePlay'); }
     else if (event.key === 'Home') { event.preventDefault(); send('rewind'); }
   });
+
+  // ===== API v2: tempo, metrum, metronóm, odpočítanie, slučka =====
+  // Lokálna hodnota sa drží chvíľu po zmene, aby rýchle otáčanie kolieskom nepreskakovalo.
+  const pending = { bpm: null, bpmUntil: 0, volume: null, volumeUntil: 0 };
+  const now = () => performance.now();
+  const currentBpm = () => (pending.bpm !== null && now() < pending.bpmUntil) ? pending.bpm : (Number(state.engine?.tempo?.bpm) || 120);
+  const currentVolume = () => (pending.volume !== null && now() < pending.volumeUntil) ? pending.volume : (Number(state.engine?.metronome?.volume) || 0);
+
+  function setTempo(bpm) {
+    if (!canEdit()) return;
+    const value = clamp(Math.round(Number(bpm) || 120), 40, 240);
+    pending.bpm = value; pending.bpmUntil = now() + 600;
+    elements.tempoInput.value = String(value);
+    send('setTempo', { bpm: value });
+  }
+  function setVolume(volume) {
+    const value = clamp(Math.round((Number(volume) || 0) * 20) / 20, 0, 1);
+    pending.volume = value; pending.volumeUntil = now() + 600;
+    elements.metroVolume.value = String(value);
+    send('setMetronomeVolume', { volume: value });
+  }
+
+  elements.tempoDown.addEventListener('click', () => setTempo(currentBpm() - 1));
+  elements.tempoUp.addEventListener('click', () => setTempo(currentBpm() + 1));
+  elements.tempoInput.addEventListener('change', () => setTempo(elements.tempoInput.value));
+  elements.tempoInput.addEventListener('keydown', e => { if (e.key === 'Enter') elements.tempoInput.blur(); });
+  elements.tempoKnob.addEventListener('wheel', e => {
+    e.preventDefault();
+    setTempo(currentBpm() + (e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 5 : 1));
+  }, { passive: false });
+  elements.tempoKnob.addEventListener('click', () => { if (canEdit()) { elements.tempoInput.focus(); elements.tempoInput.select(); } });
+  elements.meterSelect.addEventListener('change', () => {
+    if (!canEdit()) return;
+    const [numerator, denominator] = elements.meterSelect.value.split('/').map(Number);
+    send('setTimeSignature', { numerator, denominator });
+  });
+
+  const toggleMetronome = () => send('setMetronome', { on: !state.engine?.metronome?.on });
+  elements.metroButton.addEventListener('click', toggleMetronome);
+  elements.metroCheck.addEventListener('change', () => send('setMetronome', { on: elements.metroCheck.checked }));
+  elements.metroVolume.addEventListener('input', () => setVolume(elements.metroVolume.value));
+  elements.metroKnob.addEventListener('wheel', e => {
+    e.preventDefault();
+    setVolume(currentVolume() + (e.deltaY < 0 ? 0.05 : -0.05));
+  }, { passive: false });
+  elements.metroKnob.addEventListener('click', toggleMetronome);
+
+  elements.countInSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    if (canEdit()) send('setCountIn', { bars: Number(b.dataset.bars) });
+  }));
+  elements.loopCheck.addEventListener('change', () => { if (canEdit()) send('setLoop', { on: elements.loopCheck.checked }); });
+  elements.loopBarsSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    if (canEdit()) send('setLoopBars', { bars: Number(b.dataset.bars) });
+  }));
+  elements.loopBarsInput.addEventListener('change', () => {
+    if (!canEdit()) return;
+    const bars = clamp(Math.round(Number(elements.loopBarsInput.value) || 4), 1, 32);
+    elements.loopBarsInput.value = String(bars);
+    send('setLoopBars', { bars });
+  });
+  elements.loopBarsInput.addEventListener('keydown', e => { if (e.key === 'Enter') elements.loopBarsInput.blur(); });
+
+  let lastBeatKey = '';
+  function updateRhythm(s) {
+    const tempo = s.tempo || {}, metro = s.metronome || {}, loop = s.loop || {}, mp = s.musicalPosition || {};
+    const bpm = currentBpm();
+    const sig = `${Number(tempo.numerator) || 4}/${Number(tempo.denominator) || 4}`;
+    const loopOn = !!loop.on;
+    const lengthBars = Number(loop.lengthBars) || 0;
+    const barsText = Number.isInteger(lengthBars) ? String(lengthBars) : lengthBars.toFixed(2).replace(/0+$/, '').replace('.', ',');
+    const countingIn = !!s.transport?.countingIn;
+    const recordingPass = !!loop.recordingPass;
+
+    // displej: takt.doba · tempo · metrum · slučka
+    elements.screenBeat.replaceChildren();
+    const pos = document.createElement('span');
+    pos.textContent = countingIn ? 'ODPOČET · ' : `T ${Number(mp.bar) || 1}.${Number(mp.beat) || 1} · `;
+    const tempoText = document.createElement('span');
+    tempoText.textContent = `${bpm} BPM · ${sig} · `;
+    const loopText = document.createElement('span');
+    loopText.textContent = loopOn ? `LOOP ${barsText}T` : 'LOOP VYP';
+    loopText.className = loopOn ? 'loop-on' : '';
+    elements.screenBeat.append(pos, tempoText, loopText);
+
+    if (countingIn) { elements.screenMode.textContent = '● ODPOČÍTAVANIE'; }
+    else if (recordingPass) { elements.screenMode.textContent = '● NAHRÁVAM VRSTVU'; }
+    else if (loopOn && s.transport?.playing && !s.transport?.recording) { elements.screenMode.textContent = '⟳ SLUČKA'; }
+    elements.screenMode.classList.toggle('countin-mode', countingIn);
+
+    // ovládače na paneli
+    elements.loopToggle.classList.toggle('lit', loopOn);
+    elements.loopToggle.setAttribute('aria-pressed', String(loopOn));
+    elements.metroButton.classList.toggle('lit', !!metro.on);
+    elements.metroButton.setAttribute('aria-pressed', String(!!metro.on));
+    document.body.classList.toggle('loop-enabled', loopOn);
+    document.body.classList.toggle('loop-recording', recordingPass);
+
+    // LED metronómu bliká na každú dobu počas prehrávania
+    const running = !!s.transport?.playing;
+    const beatKey = running ? `${mp.bar}.${mp.beat}` : '';
+    elements.metroLed.classList.toggle('on', !!metro.on || countingIn);
+    if (beatKey && beatKey !== lastBeatKey) {
+      elements.metroLed.classList.add('beat');
+      elements.metroLed.classList.toggle('downbeat', Number(mp.beat) === 1);
+      clearTimeout(updateRhythm.ledTimer);
+      updateRhythm.ledTimer = setTimeout(() => elements.metroLed.classList.remove('beat', 'downbeat'), 110);
+    }
+    lastBeatKey = beatKey;
+
+    // pás pod panelom (nemeníme hodnotu, kým v poli píše používateľ)
+    if (document.activeElement !== elements.tempoInput) elements.tempoInput.value = String(bpm);
+    if (elements.meterSelect.value !== sig && [...elements.meterSelect.options].some(o => o.value === sig)) elements.meterSelect.value = sig;
+    elements.metroCheck.checked = !!metro.on;
+    if (document.activeElement !== elements.metroVolume) elements.metroVolume.value = String(currentVolume());
+    elements.countInSeg.querySelectorAll('button').forEach(b => b.classList.toggle('active', Number(b.dataset.bars) === Number(metro.countInBars)));
+    elements.loopCheck.checked = loopOn;
+    elements.loopBarsSeg.querySelectorAll('button').forEach(b => b.classList.toggle('active', Number(b.dataset.bars) === lengthBars));
+    if (document.activeElement !== elements.loopBarsInput) elements.loopBarsInput.value = barsText.replace(',', '.');
+    elements.loopRange.textContent = `${fmt(loop.start).slice(0, -2)} – ${fmt(loop.end).slice(0, -2)}`;
+    elements.loopRange.classList.toggle('on', loopOn);
+
+    // počas nahrávania sa nemení tempo, metrum, odpočítanie ani slučka; metronóm áno
+    document.querySelectorAll('[data-loopedit]').forEach(el => el.disabled = !canEdit());
+    elements.tempoKnob.disabled = !canEdit();
+  }
 
   function updateInputs(s) {
     const inputs = Array.isArray(s.inputs) ? s.inputs : [];
@@ -151,12 +283,13 @@
     elements.monitor.checked = !!s.monitoring;
     elements.environment.textContent = Rafa.isSimulation ? 'SIMULÁCIA · bez zvuku' : 'PRIPOJENÝ MOTOR';
     elements.environment.classList.toggle('sim', Rafa.isSimulation);
-    elements.sessionMode.textContent = Rafa.isSimulation ? 'SIMULAČNÝ REŽIM · API v1' : `API v${s.apiVersion || 1}`;
+    elements.sessionMode.textContent = Rafa.isSimulation ? `SIMULAČNÝ REŽIM · API v${s.apiVersion || 1}` : `API v${s.apiVersion || 1}`;
     elements.status.textContent = safeText(s.status?.text || 'Pripravené.');
     elements.statusLed.dataset.level = safeText(s.status?.level || 'info');
     updateInputs(s);
     updateMeter(s);
     updateDevice(s);
+    if (s.tempo) updateRhythm(s);
     document.querySelectorAll('[data-edit]').forEach(b => b.disabled = !canEdit());
     document.querySelectorAll('[data-diagnostics]').forEach(b => b.disabled = !canDiagnose());
     document.querySelectorAll('.delete-track,.rename-track').forEach(b => b.disabled = !canEdit());
@@ -169,7 +302,7 @@
       const track = trackForSlot(Number(button.dataset.slot));
       button.disabled = !track;
       button.classList.toggle('selected', !!track && track.id === state.selectedTrackId);
-      button.title = track ? `Detail vrstvy: ${safeText(track.name)}` : 'Táto vrstva ešte nie je nahraná';
+      button.setAttribute('aria-label', track ? `Detail vrstvy: ${safeText(track.name)}` : 'Táto vrstva ešte nie je nahraná');
     });
     document.querySelectorAll('[data-mute-slot]').forEach(button => {
       const track = trackForSlot(Number(button.dataset.muteSlot));
@@ -261,7 +394,6 @@
     visible.forEach((track, index) => {
       const row = document.createElement('button');
       row.type = 'button'; row.className = 'screen-track';
-      row.title = 'Zobraziť detail stopy';
       row.setAttribute('aria-label', `Zobraziť detaily stopy ${track.name}`);
       if (track.recording) row.classList.add('recording');
       if (track.muted) row.classList.add('is-muted');
@@ -295,7 +427,6 @@
       del.addEventListener('click', () => send('trackDelete', { trackId: String(track.id) }));
       buttons.append(mute, rename, del);
       const wave = document.createElement('div'); wave.className = 'track-wave';
-      wave.title = 'Kliknutím presunieš prehrávaciu hlavu';
       wave.append(waveFromClips(track.clips || [], state.viewLength, true));
       wave.addEventListener('click', e => seekByClick(e, wave));
       const head = document.createElement('div'); head.className = 'track-row-top'; head.append(heading, buttons);

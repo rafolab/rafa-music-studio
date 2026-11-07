@@ -102,7 +102,8 @@ main { width: 100%; }
   color: transparent; background: transparent; outline-offset: 0;
   transition: background-color .15s, box-shadow .15s;
 }
-.hotspot:not(:disabled):hover { background: #f5bb6232; border-color: #ffd98b70; box-shadow: inset 0 0 12px #0007, 0 0 13px #ed8e394f; }
+/* Etapa 2c: pri prechode myšou len jemné svetlo, žiadny rámček ani bublina */
+.hotspot:not(:disabled):hover { background: #ffd28a14; border-color: transparent; box-shadow: 0 0 14px #f7a83e40; }
 .hotspot:not(:disabled):active { background: #faffff39; box-shadow: inset 0 4px 12px #0009; }
 .hotspot:focus-visible { outline: 2px solid #fff0a7; outline-offset: 1px; }
 .hotspot:disabled { background: transparent; }
@@ -208,3 +209,42 @@ main { width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* ===== Etapa 2c · API v2: tempo, metronóm, slučka ===== */
+.screen-beat { flex: 0 0 auto; padding: 1px 1% 1px; border-bottom: 1px solid #7e4818; font-size: clamp(6px,.74vw,11px); color: #c28d51; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.screen-inset .screen-playhead { top: 57%; }
+.screen-beat .loop-on { color: #ffcf6e; text-shadow: 0 0 6px #e3891f; }
+.screen-mode.countin-mode { color: #ffe08a; animation: recordingGlow .5s infinite; }
+/* aktívne ovládače svietia jemne */
+.hotspot.loop-toggle.lit { background: #ffb54a1f; box-shadow: inset 0 0 0 1px #ffcf7a66, 0 0 22px #ff9f2a99; }
+.hotspot.metro-on.lit { background: #ffb54a1a; box-shadow: inset 0 0 0 1px #ffcf7a55, 0 0 16px #ff9f2a80; }
+.loop-enabled .hotspot.loop-point:not(:disabled) { box-shadow: 0 0 10px #ffb34c33; }
+.loop-recording .hotspot.loop-toggle.lit { animation: pulseRec .9s infinite; }
+.metro-led { position: absolute; z-index: 2; left: 71.25%; top: 60.6%; width: 1.15%; aspect-ratio: 1; border-radius: 50%; pointer-events: none; background: transparent; transition: background-color .06s, box-shadow .06s; }
+.metro-led.on { background: #ffb13a55; box-shadow: 0 0 6px #ff9f2a66; }
+.metro-led.on.beat { background: #ffd36b; box-shadow: 0 0 12px #ffb13a, 0 0 22px #ff8f1a99; }
+.metro-led.on.beat.downbeat { background: #fff1b8; box-shadow: 0 0 14px #ffd36b, 0 0 28px #ff9f2a; }
+.rhythm-rack { margin-top: 6px; }
+.ctrl-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.ctrl-label { font-size: 12px; font-weight: 700; color: #3b2b20; min-width: 78px; }
+.ctrl-unit { font-size: 12px; color: #4a382b; }
+.rack-button.step { width: 34px; height: 34px; padding: 0; font-size: 18px; line-height: 1; }
+.tempo-field { display: inline-flex; align-items: baseline; gap: 5px; background: #1c1410; border: 1px solid #5d4434; border-radius: 3px; padding: 4px 8px; box-shadow: inset 0 2px 5px #000a; }
+.tempo-field input, #loopBarsInput { width: 64px; border: none; background: transparent; color: #ffbe55; font: 700 20px Consolas, "Courier New", monospace; text-align: right; font-variant-numeric: tabular-nums; }
+.tempo-field span { color: #c28d51; font: 700 11px Consolas, "Courier New", monospace; }
+#loopBarsInput { width: 52px; font-size: 15px; background: #1c1410; border: 1px solid #5d4434; border-radius: 3px; padding: 5px 6px; box-shadow: inset 0 2px 5px #000a; }
+.tempo-field input:focus, #loopBarsInput:focus { outline: none; }
+#meterSelect { height: 34px; }
+.seg { display: inline-flex; border: 1px solid #5d4434; border-radius: 3px; overflow: hidden; box-shadow: 0 1px #edd8bc; }
+.seg button { min-width: 34px; height: 30px; border: none; border-right: 1px solid #5d4434; background: linear-gradient(#5b4130,#2f2018); color: #e9cfaa; font-weight: 800; }
+.seg button:last-child { border-right: none; }
+.seg button.active { background: linear-gradient(#f4b04c,#c9781f); color: #2a1709; box-shadow: inset 0 0 8px #fff3, 0 0 10px #f7a83e88; }
+.seg button:disabled, .rhythm-rack input:disabled, .rhythm-rack select:disabled, .rack-button:disabled { opacity: .45; }
+.volume-field { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: #3b2b20; font-weight: 700; }
+.volume-field input { width: 120px; accent-color: #d58a2a; }
+.loop-range { font: 700 12px Consolas, "Courier New", monospace; color: #3b2b20; background: #ead6bb66; border-radius: 3px; padding: 3px 6px; }
+.loop-range.on { color: #2a1709; background: #f4b04c99; }
+@media (max-width: 1100px) { .rhythm-rack { grid-template-columns: 1fr 1fr; } .rhythm-rack .rack-block:last-child { grid-column: 1 / -1; border-left: none !important; border-top: 1px solid #81634d; } }
+@media (max-width: 680px) { .rhythm-rack { grid-template-columns: 1fr; } }
+#meterSelect { padding: 4px 8px; border: 1px solid #4c3830; border-radius: 3px; background: linear-gradient(#42352e,#211a16); color: #ffe0b6; font-size: 13px; }
+.ctrl-row .monitor-switch { margin-top: 0; }
