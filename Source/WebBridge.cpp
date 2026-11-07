@@ -11,7 +11,7 @@
 #include "Diagnostics.h"
 #include "RafaUIData.h"
 
-static constexpr int rafaApiVersion = 1;
+static constexpr int rafaApiVersion = 2;
 
 //==============================================================================
 static const char* findUIResource (const juce::String& fileName, int& size)
@@ -205,6 +205,18 @@ void MainComponent::handleWebCommand (const juce::var& message)
     else if (command == "exportMix")         { if (! edit->getTransport().isRecording()) exportMix(); }
     else if (command == "openAudioSettings") { if (edit == nullptr || ! edit->getTransport().isRecording()) showAudioSettings(); }
     else if (command == "runDiagnostics")    runDiagnostics();
+    // --- API v2: tempo, metronom, LOOP ---
+    else if (command == "setTempo")           setTempoBpm ((double) args.getProperty ("bpm", 120.0));
+    else if (command == "setTimeSignature")   setTimeSignature ((int) args.getProperty ("numerator", 4), (int) args.getProperty ("denominator", 4));
+    else if (command == "setMetronome")       setMetronome ((bool) args.getProperty ("on", false));
+    else if (command == "setMetronomeVolume") setMetronomeVolume ((double) args.getProperty ("volume", 0.6));
+    else if (command == "setCountIn")         setCountInBars ((int) args.getProperty ("bars", 1));
+    else if (command == "setLoop")            setLoopOn ((bool) args.getProperty ("on", false));
+    else if (command == "toggleLoop")         setLoopOn (! edit->getTransport().looping.get());
+    else if (command == "setLoopBars")        setLoopBars ((int) args.getProperty ("bars", 4));
+    else if (command == "setLoopRange")       setLoopRangeSeconds ((double) args.getProperty ("start", 0.0), (double) args.getProperty ("end", 0.0));
+    else if (command == "loopIn")             setLoopPointAtPlayhead (true);
+    else if (command == "loopOut")            setLoopPointAtPlayhead (false);
     else
     {
         DBG ("Neznamy prikaz z UI: " << command);
@@ -238,6 +250,9 @@ juce::var MainComponent::buildStateObject()
     transport->setProperty ("playing", playing);
     transport->setProperty ("recording", recording);
     transport->setProperty ("position", position);
+    // pocas odpocitania (count-in) je pozicia pred zaciatkom nahravania
+    transport->setProperty ("countingIn", recording && edit != nullptr
+                                            && position < (edit->getTransport().looping ? edit->getTransport().getLoopRange().getStart().inSeconds() : 0.0));
     obj->setProperty ("transport", transport.release());
 
     auto song = std::make_unique<juce::DynamicObject>();
@@ -300,6 +315,13 @@ juce::var MainComponent::buildStateObject()
     status->setProperty ("text", statusLabel.getText());
     status->setProperty ("level", statusLevel);
     obj->setProperty ("status", status.release());
+
+    // API v2: tempo, metronome, loop, musicalPosition
+    auto tempoLoop = buildTempoLoopState();   // var musi zit, kym kopirujeme vlastnosti
+
+    if (auto* tl = tempoLoop.getDynamicObject())
+        for (auto& p : tl->getProperties())
+            obj->setProperty (p.name, p.value);
 
     auto busy = std::make_unique<juce::DynamicObject>();
     busy->setProperty ("diagnosticsAllowed", ! playing && ! recording);

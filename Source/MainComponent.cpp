@@ -413,6 +413,7 @@ void MainComponent::loadEdit (const juce::File& file)
         if (t->getName().startsWith ("Track "))
             t->setName (sk ("Stopa ") + t->getName().fromFirstOccurrenceOf ("Track ", false, false));
 
+    initTempoDefaults();
     applyMonitoring();
     trackList.setEdit (edit.get());
     resized();
@@ -734,7 +735,18 @@ void MainComponent::startRecording()
 
     if (transport.isRecording())
     {
-        stopTransport();
+        // v slucke REC ukonci vrstvu a slucka hra dalej; inak REC = STOP
+        if (loopRecordPass)
+            finishLoopRecordingPass();
+        else
+            stopTransport();
+
+        return;
+    }
+
+    if (transport.looping && transport.getLoopRange().getLength().inSeconds() < 2.0)
+    {
+        setStatus (sk ("Slučka je príliš krátka na nahrávanie (minimum 2 s). Predĺž ju."), RafaColours::accent);
         return;
     }
 
@@ -753,12 +765,26 @@ void MainComponent::startRecording()
     trackList.refreshIfChanged();
     trackList.setRecordingTrack (currentRecordingTrack);
 
-    // Rezim vrstvenia: kazda nova vrstva zacina od zaciatku skladby (pozicia 0),
-    // aby sedela s predchadzajucimi. Nahravanie z aktualnej pozicie zatial nie je.
-    transport.setPosition (te::TimePosition());
-    transport.record (false);
-    setStatus (sk ("● Nahrávam od začiatku do stopy „") + currentRecordingTrack->getName() + sk ("“ – STOP ukončí nahrávanie."),
-               RafaColours::record);
+    if (transport.looping)
+    {
+        // Slucka: nahra sa presne jeden prechod od LOOP IN po LOOP OUT, potom slucka hra dalej
+        loopRecordPass = true;
+        loopWrapped = false;
+        lastLoopPosition = -1.0e9;
+        transport.setPosition (transport.getLoopRange().getStart());
+        transport.record (false);
+        setStatus (sk ("● Nahrávam vrstvu slučky do stopy „") + currentRecordingTrack->getName()
+                     + sk ("“ – jeden prechod, potom hrá ďalej."), RafaColours::record);
+    }
+    else
+    {
+        // Rezim vrstvenia: kazda nova vrstva zacina od zaciatku skladby (pozicia 0),
+        // aby sedela s predchadzajucimi. Nahravanie z aktualnej pozicie zatial nie je.
+        transport.setPosition (te::TimePosition());
+        transport.record (false);
+        setStatus (sk ("● Nahrávam od začiatku do stopy „") + currentRecordingTrack->getName() + sk ("“ – STOP ukončí nahrávanie."),
+                   RafaColours::record);
+    }
     updateTransportButtons();
 }
 
@@ -773,8 +799,17 @@ void MainComponent::togglePlay()
         stopTransport();
     else
     {
+        if (transport.looping)
+        {
+            auto range = transport.getLoopRange();
+            auto pos = transport.getPosition();
+
+            if (pos < range.getStart() || pos >= range.getEnd())
+                transport.setPosition (range.getStart());
+        }
+
         transport.play (false);
-        setStatus (sk ("Prehrávam…"), RafaColours::play);
+        setStatus (transport.looping ? sk ("Prehrávam slučku…") : sk ("Prehrávam…"), RafaColours::play);
     }
 
     updateTransportButtons();
@@ -787,6 +822,7 @@ void MainComponent::stopTransport()
 
     auto& transport = edit->getTransport();
     const bool wasRecording = transport.isRecording();
+    loopRecordPass = false;
 
     transport.stop (false, false);
 
@@ -809,8 +845,11 @@ void MainComponent::stopTransport()
 
 void MainComponent::rewind()
 {
-    if (edit != nullptr)
-        edit->getTransport().setPosition (te::TimePosition());
+    if (edit == nullptr || edit->getTransport().isRecording())
+        return;
+
+    auto& tr = edit->getTransport();
+    tr.setPosition (tr.looping ? tr.getLoopRange().getStart() : te::TimePosition());
 }
 
 void MainComponent::checkFinishedRecording()
@@ -839,6 +878,20 @@ void MainComponent::checkFinishedRecording()
 
     if (newClip != nullptr)
     {
+        // Odpocitanie (count-in) sa nahrava tiez - klip orezeme na zaciatok
+        // skladby / slucky a v slucke aj na jej koniec (zvuk ostava na mieste).
+        {
+            auto& tr = edit->getTransport();
+            auto loopRange = tr.getLoopRange();
+            auto minStart = tr.looping ? loopRange.getStart() : te::TimePosition();
+
+            if (newClip->getPosition().getStart() < minStart)
+                newClip->setStart (minStart, true, false);
+
+            if (tr.looping && newClip->getPosition().getEnd() > loopRange.getEnd())
+                newClip->setEnd (loopRange.getEnd(), true);
+        }
+
         auto file = newClip->getOriginalFile();
         auto seconds = newClip->getPosition().getLength().inSeconds();
 
@@ -846,8 +899,12 @@ void MainComponent::checkFinishedRecording()
         {
             pendingRecordingCheck = false;
             saveEdit();
-            setStatus (sk ("Nahrávka uložená (") + juce::String (seconds, 1)
-                         + sk (" s). Stlač PREHRAŤ alebo nahraj ďalšiu vrstvu."), RafaColours::play);
+            if (transport.looping && transport.isPlaying())
+                setStatus (sk ("Vrstva uložená (") + juce::String (seconds, 1)
+                             + sk (" s) – slučka hrá ďalej. REC = ďalšia vrstva."), RafaColours::play);
+            else
+                setStatus (sk ("Nahrávka uložená (") + juce::String (seconds, 1)
+                             + sk (" s). Stlač PREHRAŤ alebo nahraj ďalšiu vrstvu."), RafaColours::play);
             return;
         }
     }
@@ -927,6 +984,8 @@ void MainComponent::timerCallback()
         if (! webUIActive)
             inputMeter.setLevelDb (db);
     }
+
+    checkLoopRecordingPass();
 
     if (pendingRecordingCheck)
         checkFinishedRecording();

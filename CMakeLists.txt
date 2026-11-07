@@ -66,6 +66,7 @@ target_sources (${TARGET_NAME} PRIVATE
     Source/Diagnostics.cpp
     Source/Diagnostics.h
     Source/WebBridge.cpp
+    Source/TempoLoop.cpp
     Source/RafaLookAndFeel.h
     Source/Texts.h)
 
@@ -98,4 +99,5 @@ target_link_libraries (${TARGET_NAME} PRIVATE
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # Linux sa pouziva len na kontrolu kompilacie, nie na distribuciu
     target_link_libraries (${TARGET_NAME} PRIVATE "-latomic")
+    target_compile_definitions (${TARGET_NAME} PRIVATE JUCE_JACK=1)
 endif()

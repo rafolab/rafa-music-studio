@@ -72,4 +72,5 @@ Program je natívna Windows aplikácia. Obrazovka je HTML zobrazené vo vstavano
 | 1 | Skúška zvuku – nahrávanie a prehrávanie gitary | **otestované 7. 11. 2026 s BEAM Mini – funguje** |
 | 1b | Most HTML ↔ motor (WebView2), `API.md` v1 | hotové |
 | 1c | Obrazovka LOOP DECK Model 5 v HTML (ChatGPT) | **otestované na Windows – funguje** |
-| 2 | Tempo, metronóm, slučka (LOOP) – najprv `API.md` v2 (Claude), potom UI (ChatGPT) | na rade |
+| 2 | Tempo, metronóm, slučka (LOOP): `API.md` v2 + motor + simulácia (Claude) | hotové, overené v simulovanom zvukovom prostredí |
+| 2c | Oživenie ovládačov LOOP, METRONÓM, TEMPO v HTML podľa `API.md` v2 (ChatGPT) | na rade |

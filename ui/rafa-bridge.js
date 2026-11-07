@@ -13,7 +13,7 @@
 (function () {
     "use strict";
 
-    const API_VERSION = 1;
+    const API_VERSION = 2;
     const listeners = { state: [], tracks: [] };
     const hasEngine = typeof window.__JUCE__ !== "undefined"
                    && window.__JUCE__.backend
@@ -81,7 +81,7 @@
         let nextId = 1001;
         const s = {
             apiVersion: API_VERSION,
-            transport: { playing: false, recording: false, position: 0 },
+            transport: { playing: false, recording: false, position: 0, countingIn: false },
             song: { name: "Skladba (simulácia)", length: 0 },
             meter: { inputDb: -100 },
             inputs: [ { id: "in-1", name: "Input 1 (BEAM Mini – simulácia)" },
@@ -91,8 +91,16 @@
             device: { ok: true, driver: "Windows Audio (simulácia)", input: "BEAM Mini", output: "Reproduktory",
                       sampleRate: 48000, buffer: 480, latencyMs: 32.5, cpu: 3 },
             status: { text: "Simulácia – program nie je pripojený, dáta sú vymyslené.", level: "info" },
-            busy: { diagnosticsAllowed: true, editingAllowed: true }
+            busy: { diagnosticsAllowed: true, editingAllowed: true },
+            // --- API v2 ---
+            tempo: { bpm: 120, numerator: 4, denominator: 4 },
+            metronome: { on: false, volume: 0.5, countInBars: 1 },
+            loop: { on: false, start: 0, end: 8, lengthBars: 4, canRecord: true, recordingPass: false },
+            musicalPosition: { bar: 1, beat: 1 }
         };
+        let recordStart = 0;      // kde zacina nahravanie (po odpocitani)
+        let loopWrapped = false;
+        let lastPos = 0;
         let tracks = [];
         let recordingTrack = null;
 
@@ -119,13 +127,43 @@
 
         function setStatus (text, level) { s.status = { text: text, level: level || "info" }; }
 
+        const secPerBeat = () => 60 / s.tempo.bpm * 4 / s.tempo.denominator;
+        const secPerBar  = () => secPerBeat() * s.tempo.numerator;
+        const snapBeat   = t => Math.round(Math.max(0, t) / secPerBeat()) * secPerBeat();
+
+        function updateLoopInfo () {
+            const len = s.loop.end - s.loop.start;
+            s.loop.lengthBars = Math.round(len / secPerBar() * 100) / 100;
+            s.loop.canRecord = len >= 2;
+        }
+
+        function setLoopRange (start, end) {
+            if (s.transport.recording) return;
+            start = Math.max(0, start);
+            if (end <= start + 0.1) return setStatus("LOOP: koniec slučky musí byť za začiatkom.", "warn");
+            s.loop.start = start; s.loop.end = end; updateLoopInfo();
+        }
+
+        function finishLoopPass () {
+            s.loop.recordingPass = false;
+            s.transport.recording = false;
+            if (recordingTrack) {
+                recordingTrack.recording = false;
+                recordingTrack.clips = [ { start: s.loop.start, length: s.loop.end - s.loop.start, peaks: fakePeaks(200, nextId) } ];
+                setStatus("Vrstva uložená (" + (s.loop.end - s.loop.start).toFixed(1) + " s) – slučka hrá ďalej. REC = ďalšia vrstva.", "ok");
+                recordingTrack = null;
+                emitTracks();
+            }
+        }
+
         function stopAll () {
             const wasRecording = s.transport.recording;
+            s.loop.recordingPass = false;
             s.transport.playing = false;
             s.transport.recording = false;
 
             if (wasRecording && recordingTrack) {
-                const len = Math.max(0.5, s.transport.position);
+                const len = Math.max(0.5, s.transport.position - recordStart);
                 recordingTrack.recording = false;
                 recordingTrack.clips = [ { start: 0, length: len, peaks: fakePeaks(200, nextId) } ];
                 setStatus("Nahrávka uložená (" + len.toFixed(1) + " s). Stlač PREHRAŤ alebo nahraj ďalšiu vrstvu.", "ok");
@@ -138,19 +176,29 @@
 
         const handlers = {
             record () {
-                if (s.transport.recording) return stopAll();
+                if (s.transport.recording) return s.loop.recordingPass ? finishLoopPass() : stopAll();
+                if (s.loop.on && ! s.loop.canRecord) return setStatus("Slučka je príliš krátka na nahrávanie (minimum 2 s). Predĺž ju.", "warn");
                 recordingTrack = { id: String(nextId++), name: "Gitara " + (tracks.length + 1), muted: false, recording: true, clips: [] };
                 tracks.push(recordingTrack);
-                s.transport.position = 0;
+                recordStart = s.loop.on ? s.loop.start : 0;
+                s.transport.position = recordStart - s.metronome.countInBars * secPerBar();
                 s.transport.playing = true;
                 s.transport.recording = true;
-                setStatus("● Nahrávam od začiatku do stopy „" + recordingTrack.name + "“ – STOP ukončí nahrávanie.", "recording");
+                s.loop.recordingPass = s.loop.on;
+                loopWrapped = false;
+                lastPos = s.transport.position;
+                setStatus(s.loop.on ? "● Nahrávam vrstvu slučky do stopy „" + recordingTrack.name + "“ – jeden prechod, potom hrá ďalej."
+                                    : "● Nahrávam od začiatku do stopy „" + recordingTrack.name + "“ – STOP ukončí nahrávanie.", "recording");
                 emitTracks();
             },
-            play () { if (! s.transport.recording) { s.transport.playing = true; setStatus("Prehrávam…", "ok"); } },
+            play () {
+                if (s.transport.recording) return;
+                if (s.loop.on && (s.transport.position < s.loop.start || s.transport.position >= s.loop.end)) s.transport.position = s.loop.start;
+                s.transport.playing = true; setStatus(s.loop.on ? "Prehrávam slučku…" : "Prehrávam…", "ok");
+            },
             stop () { stopAll(); },
             togglePlay () { (s.transport.playing || s.transport.recording) ? stopAll() : handlers.play(); },
-            rewind () { s.transport.position = 0; },
+            rewind () { if (! s.transport.recording) s.transport.position = s.loop.on ? s.loop.start : 0; },
             seek (a) { s.transport.position = Math.max(0, Number(a.seconds) || 0); },
             selectInput (a) { s.selectedInput = a.id; },
             setMonitoring (a) { s.monitoring = !! a.on; },
@@ -169,7 +217,46 @@
                 if (! s.busy.diagnosticsAllowed) return setStatus("Diagnostiku spusti, keď je prehrávanie zastavené.", "warn");
                 setStatus("Simulácia: diagnostika skopírovaná do schránky.", "ok");
             },
-            uiReady () {}
+            uiReady () {},
+            // --- API v2 ---
+            setTempo (a) {
+                if (s.transport.recording) return;
+                const bars = [s.loop.start / secPerBar(), s.loop.end / secPerBar()];
+                s.tempo.bpm = Math.min(240, Math.max(40, Math.round((Number(a.bpm) || 120) * 10) / 10));
+                s.loop.start = bars[0] * secPerBar(); s.loop.end = bars[1] * secPerBar(); updateLoopInfo();
+            },
+            setTimeSignature (a) {
+                if (s.transport.recording) return;
+                s.tempo.numerator = Math.min(7, Math.max(2, Math.round(Number(a.numerator) || 4)));
+                s.tempo.denominator = Number(a.denominator) === 8 ? 8 : 4; updateLoopInfo();
+            },
+            setMetronome (a) { s.metronome.on = !! a.on; },
+            setMetronomeVolume (a) { s.metronome.volume = Math.min(1, Math.max(0, Number(a.volume) || 0)); },
+            setCountIn (a) { if (! s.transport.recording) s.metronome.countInBars = [0, 1, 2].includes(Number(a.bars)) ? Number(a.bars) : (Number(a.bars) > 2 ? 2 : 0); },
+            setLoop (a) {
+                if (s.transport.recording) return;
+                s.loop.on = !! a.on;
+                if (s.loop.on && (s.transport.position < s.loop.start || s.transport.position >= s.loop.end)) s.transport.position = s.loop.start;
+            },
+            toggleLoop () { handlers.setLoop({ on: ! s.loop.on }); },
+            setLoopBars (a) {
+                const bars = Math.min(32, Math.max(1, Math.round(Number(a.bars) || 4)));
+                const start = Math.round(s.loop.start / secPerBar()) * secPerBar();
+                setLoopRange(start, start + bars * secPerBar());
+            },
+            setLoopRange (a) { setLoopRange(Number(a.start) || 0, Number(a.end) || 0); },
+            loopIn () {
+                if (s.transport.recording) return;
+                const p = snapBeat(s.transport.position);
+                const end = p < s.loop.end - 0.1 ? s.loop.end : p + Math.max(s.loop.end - s.loop.start, secPerBar());
+                setLoopRange(p, end); setStatus("LOOP IN nastavený na " + p.toFixed(2) + " s");
+            },
+            loopOut () {
+                if (s.transport.recording) return;
+                const p = snapBeat(s.transport.position);
+                if (p <= s.loop.start + 0.1) return setStatus("LOOP OUT musí byť za LOOP IN – posuň prehrávaciu hlavu ďalej.", "warn");
+                setLoopRange(s.loop.start, p); setStatus("LOOP OUT nastavený na " + p.toFixed(2) + " s");
+            }
         };
 
         let last = performance.now();
@@ -181,9 +268,24 @@
 
             if (s.transport.playing) {
                 s.transport.position += dt;
-                if (! s.transport.recording && tracks.length && s.transport.position > songLength())
+
+                if (s.loop.on && s.transport.position >= s.loop.end && s.transport.position - dt >= s.loop.start - 0.001)
+                    s.transport.position = s.loop.start + (s.transport.position - s.loop.end);   // slucka sa pretoci
+
+                if (s.loop.recordingPass) {
+                    if (s.transport.position < lastPos - 0.25) loopWrapped = true;
+                    if (loopWrapped && s.transport.position >= s.loop.start + 0.06) finishLoopPass();
+                }
+                lastPos = s.transport.position;
+
+                if (! s.loop.on && ! s.transport.recording && tracks.length && s.transport.position > songLength())
                     stopAll();
             }
+
+            s.transport.countingIn = s.transport.recording && s.transport.position < recordStart;
+            const beats = s.transport.position / secPerBeat();
+            s.musicalPosition = beats < 0 ? { bar: 0, beat: 0 }
+                              : { bar: Math.floor(beats / s.tempo.numerator) + 1, beat: Math.floor(beats % s.tempo.numerator) + 1 };
 
             const hum = Math.random() < 0.08 ? -6 - Math.random() * 10 : -30 - Math.random() * 25;
             s.meter.inputDb = Math.max(hum, s.meter.inputDb - 2.5);

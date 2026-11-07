@@ -1,6 +1,6 @@
 # RAFA MUSIC STUDIO – API medzi obrazovkou (HTML) a motorom (C++)
 
-**Verzia API: 1**  ·  vlastník mosta: Claude  ·  zmeny len po dohode (pozri `KOORDINACIA.md`)
+**Verzia API: 2**  ·  vlastník mosta: Claude  ·  zmeny len po dohode (pozri `KOORDINACIA.md`)
 
 Obrazovka používa iba dve funkcie z `ui/rafa-bridge.js`:
 
@@ -10,6 +10,7 @@ Rafa.send("selectInput", { id: "in-1" });   // príkaz s parametrami
 Rafa.on("state",  s => { ... });            // pravidelný stav (cca 20× za sekundu)
 Rafa.on("tracks", t => { ... });            // zoznam stôp (len keď sa zmení)
 Rafa.isSimulation                           // true = otvorené v prehliadači bez programu
+Rafa.apiVersion                             // 2
 ```
 
 `rafa-bridge.js` načítaj ako prvý skript: `<script src="rafa-bridge.js"></script>`.
@@ -38,7 +39,34 @@ Rafa.isSimulation                           // true = otvorené v prehliadači b
 | `openAudioSettings` | – | Otvorí natívne okno nastavení zvuku. |
 | `runDiagnostics` | – | Diagnostika (skopíruje správu do schránky). |
 
-Klávesové skratky rieši UI a posiela príkazy: **R** → `record`, **medzerník** → `togglePlay`, **Home** → `rewind`.
+Klávesové skratky rieši UI a posiela príkazy: **R** → `record`, **medzerník** → `togglePlay`, **Home** → `rewind`, **L** → `toggleLoop` (nové v API 2).
+
+### Príkazy pridané v API 2 – tempo, metronóm, LOOP
+
+| Príkaz | Parametre | Čo spraví |
+| --- | --- | --- |
+| `setTempo` | `{ bpm: number }` | Tempo skladby 40–240 BPM (zaokrúhli sa na 0,1). Slučka si zachová dĺžku v taktoch. Nahraté vrstvy sa **nepreťahujú** – po zmene tempa nesedia s metronómom. Počas nahrávania sa ignoruje. |
+| `setTimeSignature` | `{ numerator: 2–7, denominator: 4 \| 8 }` | Metrum (predvolené 4/4). Počas nahrávania sa ignoruje. |
+| `setMetronome` | `{ on: boolean }` | Zapne/vypne metronóm (počuť ho pri prehrávaní aj nahrávaní, prvá doba taktu je zdôraznená). |
+| `setMetronomeVolume` | `{ volume: 0–1 }` | Hlasitosť metronómu (0 = najtichšie, nie úplne ticho). |
+| `setCountIn` | `{ bars: 0 \| 1 \| 2 }` | Odpočítanie pred nahrávaním v taktoch (predvolené 1). Pri odpočítaní znie metronóm aj keď je vypnutý. |
+| `setLoop` | `{ on: boolean }` | Zapne/vypne slučku. Pri zapnutí sa prehrávacia hlava presunie na LOOP IN, ak je mimo slučky. |
+| `toggleLoop` | – | Prepne slučku (tlačidlo so šípkami / kláves L). |
+| `setLoopBars` | `{ bars: 1–32 }` | Dĺžka slučky v taktoch od LOOP IN (LOOP IN sa zarovná na takt). Najrýchlejší spôsob pre loop deck: 1, 2, 4, 8 taktov. |
+| `setLoopRange` | `{ start: s, end: s }` | Presný rozsah slučky v sekundách. |
+| `loopIn` | – | LOOP IN = aktuálna pozícia prehrávacej hlavy, zarovnaná na najbližšiu dobu. Ak by bol za LOOP OUT, slučka si zachová dĺžku. |
+| `loopOut` | – | LOOP OUT = aktuálna pozícia, zarovnaná na najbližšiu dobu. Musí byť za LOOP IN, inak sa ignoruje a v `status` príde upozornenie. |
+
+Všetky nastavenia tempa, metronómu a slučky sa ukladajú do skladby. Nová skladba: 120 BPM, 4/4, metronóm vypnutý, odpočítanie 1 takt, slučka 4 takty od 0 s (vypnutá).
+
+### Správanie transportu (API 2)
+
+| Situácia | `record` | `play` / `togglePlay` | `stop` | `rewind` |
+| --- | --- | --- | --- | --- |
+| **LOOP vypnutý** | Nová vrstva od 0 s (po odpočítaní); ďalší `record` alebo `stop` ukončí nahrávanie a zastaví. | Hrá od aktuálnej pozície. | Zastaví. | Na 0 s. |
+| **LOOP zapnutý** | Odpočítanie → nahrá sa **presne jeden prechod** slučky (LOOP IN → LOOP OUT) do novej vrstvy → nahrávanie skončí **samo** a slučka **hrá ďalej** s novou vrstvou. Ďalší `record` = ďalšia vrstva. `record` počas nahrávania ukončí vrstvu skôr (slučka hrá ďalej). Slučka musí mať aspoň 2 s (`loop.canRecord`). | Hrá slučku dokola; ak je hlava mimo slučky, začne od LOOP IN. | Zastaví všetko (aj nahrávanie). | Na LOOP IN. |
+
+Počas nahrávania sa ignorujú: `seek`, `rewind`, zmena tempa, metra, odpočítania a slučky.
 
 ---
 
@@ -65,9 +93,23 @@ Klávesové skratky rieši UI a posiela príkazy: **R** → `record`, **medzern�
     "cpu": 4
   },
   "status": { "text": "Pripravené.", "level": "info" },
-  "busy": { "diagnosticsAllowed": true, "editingAllowed": true }
+  "busy": { "diagnosticsAllowed": true, "editingAllowed": true },
+
+  "tempo":     { "bpm": 120, "numerator": 4, "denominator": 4 },
+  "metronome": { "on": false, "volume": 0.5, "countInBars": 1 },
+  "loop":      { "on": true, "start": 0.0, "end": 8.0, "lengthBars": 4,
+                 "canRecord": true, "recordingPass": false },
+  "musicalPosition": { "bar": 3, "beat": 2 }
 }
 ```
+
+Polia pridané v API 2:
+- `apiVersion` je `2`.
+- `transport.countingIn` – `true` počas odpočítania pred nahrávaním (`position` je vtedy pred začiatkom nahrávania, môže byť záporná). Vhodné na zobrazenie „ODPOČÍTAVANIE“ a blikanie LED metronómu.
+- `tempo` – tempo a metrum.
+- `metronome` – metronóm, hlasitosť 0–1, odpočítanie v taktoch.
+- `loop` – slučka: `start`/`end` v sekundách, `lengthBars` (môže byť desatinné), `canRecord` (dĺžka ≥ 2 s), `recordingPass` (`true` = práve sa nahráva vrstva slučky).
+- `musicalPosition` – takt a doba prehrávacej hlavy (od 1); počas odpočítania `0`/`0`.
 
 Poznámky:
 - `meter.inputDb` je v dB: −100 = ticho, 0 = maximum. Odporúčané pásma: zelená do −12, žltá do −3, červená nad −3.
@@ -117,3 +159,4 @@ Poznámky:
 | Verzia | Zmena |
 | --- | --- |
 | 1 | Prvá verzia: transport, vstup, merač, stopy, skladby, export, diagnostika |
+| 2 | Tempo, metrum, metronóm, odpočítanie, LOOP (IN/OUT/dĺžka v taktoch, nahrávanie vrstiev v slučke), `transport.countingIn`, `musicalPosition`, kláves L |

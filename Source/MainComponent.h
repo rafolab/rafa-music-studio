@@ -105,6 +105,26 @@ private:
     void setStatus (const juce::String&, juce::Colour = RafaColours::textDim);
     juce::String statusLevel { "info" };
 
+    // --- tempo, metronom, LOOP (API v2) - implementacia v TempoLoop.cpp ---
+    bool loopRecordPass = false;        // nahrava sa jeden prechod slucky
+    double lastLoopPosition = -1.0e9;   // na zistenie, ze slucka sa pretocila
+    bool loopWrapped = false;
+    void initTempoDefaults();
+    void setTempoBpm (double bpm);
+    void setTimeSignature (int numerator, int denominator);
+    void setMetronome (bool on);
+    void setMetronomeVolume (double volume);
+    void setCountInBars (int bars);
+    void setLoopOn (bool on);
+    void setLoopRangeSeconds (double start, double end);
+    void setLoopBars (int bars);
+    void setLoopPointAtPlayhead (bool isStart);
+    void finishLoopRecordingPass();
+    void checkLoopRecordingPass();
+    double snapToNearestBeat (double seconds) const;
+    double getSecondsPerBar() const;
+    juce::var buildTempoLoopState();
+
     // --- obrazovka v HTML (ui/) - implementacia vo WebBridge.cpp ---
     std::unique_ptr<juce::WebBrowserComponent> webView;
     bool webUIActive = false;
