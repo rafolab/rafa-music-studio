@@ -194,6 +194,7 @@ MainComponent::MainComponent (te::Engine& e)
     addAndMakeVisible (trackViewport);
 
     // ---- motor
+    juce::Logger::writeToLog ("2a. obrazovka vytvorena, pripajam zariadenia");
     auto& dm = engine.getDeviceManager();
     dm.addChangeListener (this);
     ensureMonoInputs();
@@ -201,7 +202,12 @@ MainComponent::MainComponent (te::Engine& e)
     attachMeterToSelectedInput();
     updateDeviceInfo();
 
+    juce::Logger::writeToLog ("2b. zariadenia: " + dm.deviceManager.getCurrentAudioDeviceType()
+                              + " / " + (dm.deviceManager.getCurrentAudioDevice() != nullptr
+                                            ? dm.deviceManager.getCurrentAudioDevice()->getName() : juce::String ("ziadne")));
+
     auto last = juce::File (settings->getValue ("lastSong"));
+    juce::Logger::writeToLog ("2c. otvaram skladbu: " + last.getFullPathName());
 
     if (last.existsAsFile())
         loadEdit (last);
@@ -214,7 +220,9 @@ MainComponent::MainComponent (te::Engine& e)
 
     setStatus (sk ("Pripravené. Vyber vstup pre gitaru a stlač NAHRÁVAŤ."));
 
+    juce::Logger::writeToLog ("2d. skladba otvorena, spustam HTML obrazovku");
     setupWebUI();
+    juce::Logger::writeToLog ("2e. HTML obrazovka: " + juce::String (webUIActive ? "aktivna" : "klasicka obrazovka"));
 }
 
 MainComponent::~MainComponent()

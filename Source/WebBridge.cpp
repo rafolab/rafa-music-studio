@@ -101,13 +101,18 @@ void MainComponent::setupWebUI()
         .withEventListener ("rafaCommand", [this] (const juce::var& v) { handleWebCommand (v); })
         .withResourceProvider ([this] (const juce::String& url) { return getWebResource (url); });
 
+    juce::Logger::writeToLog ("   WebView2: kontrola podpory");
+
     if (! juce::WebBrowserComponent::areOptionsSupported (options))
     {
+        juce::Logger::writeToLog ("   WebView2: NIE JE podporovane");
         setStatus (sk ("WebView2 nie je dostupné – používa sa klasická obrazovka."), RafaColours::accent);
         return;
     }
 
+    juce::Logger::writeToLog ("   WebView2: vytvaram okno prehliadaca");
     webView = std::make_unique<juce::WebBrowserComponent> (options);
+    juce::Logger::writeToLog ("   WebView2: okno vytvorene");
 
     // klasicku obrazovku skryjeme (jej logika ostava a pouziva ju aj HTML)
     for (auto* child : getChildren())
@@ -138,6 +143,7 @@ void MainComponent::handleWebCommand (const juce::var& message)
 
     if (command == "uiReady")
     {
+        juce::Logger::writeToLog ("   HTML obrazovka sa nacitala (uiReady)");
         sendStateToWeb();
         sendTracksToWebIfChanged (true);
         return;
