@@ -197,6 +197,7 @@ MainComponent::MainComponent (te::Engine& e)
     juce::Logger::writeToLog ("2a. obrazovka vytvorena, pripajam zariadenia");
     auto& dm = engine.getDeviceManager();
     dm.addChangeListener (this);
+    rememberOrRestorePreferredInput (false);
     ensureMonoInputs();
     refreshInputList();
     attachMeterToSelectedInput();
@@ -1024,6 +1025,9 @@ void MainComponent::timerCallback()
             trackList.setSize (trackViewport.getMaximumVisibleWidth(), trackList.getIdealHeight());
     }
 
+    if (timerTicks % 60 == 0)   // kazde 2 s: nebol prave zapojeny BEAM?
+        rememberOrRestorePreferredInput (false);
+
     if (timerTicks % 15 == 0)
         updateDeviceInfo();
 
@@ -1042,6 +1046,7 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
     if (source == &engine.getDeviceManager())
     {
         // zmenilo sa zvukove zariadenie (napr. pripojene kombo alebo zmena v nastaveniach)
+        rememberOrRestorePreferredInput (true);
         detachMeter();
         ensureMonoInputs();
         applyMonitoring();
@@ -1056,4 +1061,66 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
     {
         updateTransportButtons();
     }
+}
+
+//==============================================================================
+/*  Preferovany vstup (napr. BEAM Mini).
+    - Ked pouzivatel zvoli vstup v Nastaveniach a preferovany vstup je prave dostupny,
+      zapamata sa ako novy preferovany.
+    - Ked preferovany vstup nie je zvoleny, ale je dostupny (kombo sa prave zapojilo
+      alebo bolo zapojene az po spusteni), program ho zvoli sam.
+    - Kym si pouzivatel nic nezvolil, preferuje sa vstup s "BEAM" v nazve. */
+void MainComponent::rememberOrRestorePreferredInput (bool userChange)
+{
+    static bool busy = false;
+
+    if (busy || (edit != nullptr && edit->getTransport().isRecording()))
+        return;
+
+    auto& adm = engine.getDeviceManager().deviceManager;
+    auto* type = adm.getCurrentDeviceTypeObject();
+
+    if (type == nullptr || ! type->hasSeparateInputsAndOutputs())
+        return;   // ASIO: vstup a vystup su jedno zariadenie, nic nemenime
+
+    auto available = type->getDeviceNames (true);
+    auto setup = adm.getAudioDeviceSetup();
+    auto current = setup.inputDeviceName;
+    auto preferred = settings->getValue ("preferredInput");
+
+    if (preferred.isEmpty())
+        for (auto& n : available)
+            if (n.containsIgnoreCase ("BEAM")) { preferred = n; break; }
+
+    if (preferred.isEmpty())
+        return;
+
+    const bool preferredAvailable = available.contains (preferred);
+
+    if (userChange && current.isNotEmpty() && current != preferred && preferredAvailable)
+    {
+        // pouzivatel vedome zvolil iny vstup, hoci preferovany je k dispozicii
+        settings->setValue ("preferredInput", current);
+        settings->saveIfNeeded();
+        juce::Logger::writeToLog ("Preferovany vstup zmeneny na: " + current);
+        return;
+    }
+
+    if (current == preferred || ! preferredAvailable)
+        return;
+
+    settings->setValue ("preferredInput", preferred);
+    settings->saveIfNeeded();
+
+    setup.inputDeviceName = preferred;
+    setup.useDefaultInputChannels = true;
+
+    busy = true;
+    auto err = adm.setAudioDeviceSetup (setup, true);
+    busy = false;
+
+    juce::Logger::writeToLog ("Automaticky zvoleny vstup: " + preferred + (err.isNotEmpty() ? " – chyba: " + err : juce::String()));
+
+    if (err.isEmpty())
+        setStatus (sk ("Vstup prepnutý na ") + preferred, RafaColours::play);
 }

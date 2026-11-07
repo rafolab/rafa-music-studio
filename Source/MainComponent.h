@@ -85,6 +85,7 @@ private:
 
     // --- vstupy a zariadenia ---
     void ensureMonoInputs();
+    void rememberOrRestorePreferredInput (bool userChange);   // zapamata si BEAM a po zapojeni ho znova zvoli
     void refreshInputList();
     juce::String getSelectedInputID() const;
     void applyMonitoring();
