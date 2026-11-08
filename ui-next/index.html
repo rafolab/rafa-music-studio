@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<title>RAFA MUSIC STUDIO – LOOP DECK</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+    <img id="panel" src="assets/panel.webp" alt="" draggable="false">
+
+    <!-- displej: obsah sa kreslí do obdĺžnika a matrix3d ho vloží presne do skla -->
+    <div id="display">
+      <div class="d-head">
+        <span class="d-label">Projekt:</span><span id="dSong" class="d-song">–</span>
+        <span id="dTempo" class="d-tempo">♪ 120.0</span>
+      </div>
+      <div class="d-time-row">
+        <span id="dStatus" class="d-status"></span>
+        <span id="dTime" class="d-time">0:00.000</span>
+        <span id="dMeter" class="d-meter">4/4</span>
+        <svg class="d-metro" viewBox="0 0 20 24" id="dMetroIcon"><path d="M6 2h8l5 20H1z M10 20 L15 6" /></svg>
+      </div>
+      <div class="d-info"><span id="dBar">T 1.1</span><span id="dLoop">LOOP VYP</span><span id="dLength">/ 0:00</span></div>
+      <div class="d-lanes" id="dLanes"></div>
+      <div id="dMenu" class="d-menu" hidden></div>
+    </div>
+
+    <svg id="overlay" viewBox="0 0 1672 941" width="1672" height="941">
+      <defs>
+        <clipPath id="clipVuL"><rect id="clipVuLr"/></clipPath>
+        <clipPath id="clipVuR"><rect id="clipVuRr"/></clipPath>
+      </defs>
+      <g id="vuNeedles"></g>
+      <g id="knobMarks"></g>
+    </svg>
+
+    <div id="sprites"></div>
+    <div id="hit"></div>
+  </div>
+</div>
+<script src="controls.js"></script>
+<script src="rafa-bridge.js"></script>
+<script src="console.js"></script>
+</body>
+</html>
