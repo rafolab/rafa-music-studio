@@ -293,7 +293,7 @@ window.RAFA_CONTROLS = {
    "h": 51,
    "off": "assets/btn_mute1_off.webp",
    "on": "assets/btn_mute1_on.webp",
-   "kind": "cream"
+   "kind": "litcream"
   },
   "solo1": {
    "x": 286,
@@ -347,7 +347,7 @@ window.RAFA_CONTROLS = {
    "h": 50,
    "off": "assets/btn_mute4_off.webp",
    "on": "assets/btn_mute4_on.webp",
-   "kind": "cream"
+   "kind": "litcream"
   },
   "solo4": {
    "x": 672,
@@ -356,7 +356,7 @@ window.RAFA_CONTROLS = {
    "h": 49,
    "off": "assets/btn_solo4_off.webp",
    "on": "assets/btn_solo4_on.webp",
-   "kind": "grey2"
+   "kind": "grey2fix"
   }
  },
  "leds": {

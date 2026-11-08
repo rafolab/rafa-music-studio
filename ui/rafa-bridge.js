@@ -13,7 +13,7 @@
 (function () {
     "use strict";
 
-    const API_VERSION = 4;
+    const API_VERSION = 5;
     const listeners = { state: [], tracks: [] };
     const hasEngine = typeof window.__JUCE__ !== "undefined"
                    && window.__JUCE__.backend
@@ -82,7 +82,8 @@
         const s = {
             apiVersion: API_VERSION,
             transport: { playing: false, recording: false, position: 0, countingIn: false },
-            song: { name: "Skladba (simulácia)", length: 0 },
+            song: { name: "Bez názvu", length: 0, isDraft: true, hasRecordings: false },
+            history: { canUndo: false, canRedo: false, undoLabel: "", redoLabel: "" },
             meter: { inputDb: -100 },
             inputs: [ { id: "in-1", name: "Input 1 (BEAM Mini – simulácia)" },
                       { id: "in-2", name: "Input 2 (BEAM Mini – simulácia)" } ],
@@ -108,6 +109,13 @@
         let lastPos = 0;
         let tracks = [];
         let recordingTrack = null;
+        // v5: historia pokusov
+        let undoS = [], redoS = [], createdNow = false;
+        const deep = (o) => JSON.parse(JSON.stringify(o));
+        function pushTake (t) { undoS.push({ type: "take", id: t.id, clip: deep(t.clips[t.clips.length - 1]), created: createdNow, label: "pokus v stope „" + t.name + "“" }); if (undoS.length > 20) undoS.shift(); redoS = []; }
+        function hist () { s.history = { canUndo: undoS.length > 0, canRedo: redoS.length > 0, undoLabel: undoS.length ? undoS[undoS.length - 1].label : "", redoLabel: redoS.length ? redoS[redoS.length - 1].label : "" };
+                           s.song.hasRecordings = tracks.some(t => t.clips.length); }
+        const songs = [ { name: "Moja prvá slučka", path: "sim/1", draft: false, current: false, modified: "07.11.2026 18:15" }, { name: "Skladba 2026-11-06 23-06", path: "sim/2", draft: false, current: false, modified: "06.11.2026 23:06" } ];
 
         function fakePeaks (n, seed) {
             const out = [];
@@ -155,6 +163,7 @@
             if (recordingTrack) {
                 recordingTrack.recording = false;
                 recordingTrack.clips = [ { start: s.loop.start, length: s.loop.end - s.loop.start, peaks: fakePeaks(200, nextId) } ];
+                pushTake(recordingTrack);
                 setStatus("Vrstva uložená (" + (s.loop.end - s.loop.start).toFixed(1) + " s) – slučka hrá ďalej. REC = ďalšia vrstva.", "ok");
                 recordingTrack = null;
                 emitTracks();
@@ -171,6 +180,7 @@
                 const len = Math.max(0.5, s.transport.position - recordStart);
                 recordingTrack.recording = false;
                 recordingTrack.clips = [ { start: 0, length: len, peaks: fakePeaks(200, nextId) } ];
+                pushTake(recordingTrack);
                 setStatus("Nahrávka uložená (" + len.toFixed(1) + " s). Stlač PREHRAŤ alebo nahraj ďalšiu vrstvu.", "ok");
                 recordingTrack = null;
                 emitTracks();
@@ -185,6 +195,7 @@
                 if (s.loop.on && ! s.loop.canRecord) return setStatus("Slučka je príliš krátka na nahrávanie (minimum 2 s). Predĺž ju.", "warn");
                 // v4: vybraná prázdna vrstva, inak posledná prázdna, inak nová
                 const empty = tracks.find(t => t.id === s.selectedTrackId && ! t.clips.length) || (tracks.length && ! tracks[tracks.length - 1].clips.length ? tracks[tracks.length - 1] : null);
+                createdNow = ! empty;
                 if (empty) { recordingTrack = empty; recordingTrack.recording = true; if (/^Stopa /.test(recordingTrack.name)) recordingTrack.name = "Gitara " + (tracks.indexOf(empty) + 1); }
                 else { recordingTrack = { id: String(nextId++), name: "Gitara " + (tracks.length + 1), muted: false, solo: false, volumeDb: 0, pan: 0, recording: true, clips: [] }; tracks.push(recordingTrack); }
                 s.selectedTrackId = recordingTrack.id;
@@ -214,9 +225,12 @@
             trackRename (a) { const t = tracks.find(x => x.id === a.trackId); if (t) { t.name = String(a.name); emitTracks(); } },
             trackDelete (a) {
                 if (s.transport.recording) return;
-                if (window.confirm("Simulácia: zmazať stopu?")) { tracks = tracks.filter(x => x.id !== a.trackId); emitTracks(); setStatus("Stopa zmazaná."); }
+                const i = tracks.findIndex(x => x.id === a.trackId); if (i < 0) return;
+                if (window.confirm("Simulácia: odstrániť stopu? (Dá sa vrátiť cez UNDO.)")) {
+                    undoS.push({ type: "del", track: deep(tracks[i]), index: i, label: "odstránenie stopy „" + tracks[i].name + "“" }); redoS = [];
+                    tracks.splice(i, 1); emitTracks(); setStatus("Stopa odstránená. Vrátiť: Ctrl+Z."); }
             },
-            newSong () { tracks = []; s.transport.position = 0; s.song.name = "Nová skladba (simulácia)"; emitTracks(); setStatus("Nová skladba vytvorená."); },
+            newSong () { tracks = []; undoS = []; redoS = []; s.transport.position = 0; s.song = { name: "Bez názvu", length: 0, isDraft: true, hasRecordings: false }; emitTracks(); setStatus("Nová skladba."); },
             openSong () { setStatus("Simulácia: tu by sa otvorilo okno na výber skladby."); },
             openSongFolder () { setStatus("Simulácia: tu by sa otvoril priečinok skladby."); },
             exportMix () { setStatus(tracks.length ? "Simulácia: mix exportovaný." : "Nie je čo exportovať – najprv niečo nahraj.", tracks.length ? "ok" : "warn"); },
@@ -226,6 +240,27 @@
                 setStatus("Simulácia: diagnostika skopírovaná do schránky.", "ok");
             },
             uiReady () {},
+            // --- API v5: UNDO / REDO, skladby, export stop ---
+            undo () {
+                if (s.transport.recording || ! undoS.length) return; const e = undoS.pop();
+                if (e.type === "take") { const t = tracks.find(x => x.id === e.id); if (!t) return; t.clips = []; if (e.created) { e.index = tracks.indexOf(t); e.track = deep(t); tracks.splice(e.index, 1); } }
+                else tracks.splice(Math.min(e.index, tracks.length), 0, deep(e.track));
+                redoS.push(e); emitTracks(); setStatus(e.type === "take" ? "Pokus vrátený. Obnoviť: Ctrl+Y." : "Stopa obnovená.");
+            },
+            redo () {
+                if (s.transport.recording || ! redoS.length) return; const e = redoS.pop();
+                if (e.type === "take") { let t = tracks.find(x => x.id === e.id); if (!t && e.track) { t = deep(e.track); tracks.splice(Math.min(e.index, tracks.length), 0, t); } if (t) t.clips = [deep(e.clip)]; }
+                else tracks = tracks.filter(x => x.id !== e.track.id);
+                undoS.push(e); emitTracks(); setStatus("Obnovené.");
+            },
+            listSongs () { s.songList = [ { name: s.song.name, path: "sim/current", draft: s.song.isDraft, current: true, modified: "teraz" }, ...songs ]; },
+            openSongPath (a) { const x = songs.find(y => y.path === a.path); if (x) { s.song = { name: x.name, length: 0, isDraft: false, hasRecordings: false }; tracks = []; undoS = []; redoS = []; emitTracks(); setStatus("Otvorená skladba „" + x.name + "“ (simulácia, bez stôp)."); } },
+            saveSongAs (a) { s.song.name = a.name; s.song.isDraft = false; setStatus("Skladba uložená ako „" + a.name + "“."); },
+            discardSong (a) { tracks = []; undoS = []; redoS = []; s.song = { name: "Bez názvu", length: 0, isDraft: true, hasRecordings: false }; emitTracks(); setStatus("Skladba je v koši Windows (simulácia)."); },
+            deleteSong () { this.discardSong({}); },
+            moveSongsToDrafts (a) { setStatus("Presunuté do Rozpracované: " + (a.paths || []).length + " (simulácia)."); },
+            exportTracks () { setStatus("Exportované stopy: " + tracks.filter(t => t.clips.length).length + " (simulácia)."); },
+            openExportFolder () { setStatus("Simulácia: priečinok exportu."); },
             // --- API v3: mix ---
             trackVolume (a) { const t = tracks.find(x => x.id === a.trackId); if (t) { const db = Number(a.db) || 0; t.volumeDb = db <= -60 ? -100 : Math.min(6, Math.max(-60, Math.round(db * 10) / 10)); emitTracks(); } },
             trackPan (a) { const t = tracks.find(x => x.id === a.trackId); if (t) { t.pan = Math.min(1, Math.max(-1, Math.round((Number(a.pan) || 0) * 100) / 100)); emitTracks(); } },
@@ -310,6 +345,7 @@
                 const target = audible ? -18 + t.volumeDb + (Math.random() - 0.5) * 12 : -100;
                 return { id: t.id, levelDb: Math.round(Math.max(target, prev - 1.5) * 10) / 10 };
             });
+            hist();
             s.mixer.masterLevelDb = s.mixer.trackLevels.reduce((m, l) => Math.max(m, l.levelDb), -100);
             // L/R: panoráma stôp rozdelí úroveň medzi kanály, hlavná hlasitosť sa pripočíta
             let L = -100, R = -100;

@@ -11,7 +11,7 @@
 #include "Diagnostics.h"
 #include "RafaUIData.h"
 
-static constexpr int rafaApiVersion = 4;
+static constexpr int rafaApiVersion = 5;
 
 //==============================================================================
 static const char* findUIResource (const juce::String& fileName, int& size)
@@ -151,7 +151,7 @@ void MainComponent::handleWebCommand (const juce::var& message)
         return;
     }
 
-    if (edit == nullptr && command != "newSong" && command != "openSong" && command != "openAudioSettings")
+    if (edit == nullptr && command != "newSong" && command != "openSong" && command != "openAudioSettings" && command != "openSongPath" && command != "listSongs")
         return;
 
     if      (command == "record")            startRecording();
@@ -233,6 +233,17 @@ void MainComponent::handleWebCommand (const juce::var& message)
         settings->setValue ("inputGainDb", inputGainDb);
         applyInputGain();
     }
+    // --- Etapa 2D ---
+    else if (command == "undo")               undoLast();
+    else if (command == "redo")               redoLast();
+    else if (command == "listSongs")          refreshSongList();
+    else if (command == "openSongPath")       openSongPath (args.getProperty ("path", {}).toString());
+    else if (command == "saveSongAs")         saveSongAs (args.getProperty ("name", {}).toString());
+    else if (command == "discardSong")        discardOrDeleteSong (true,  args.getProperty ("thenOpen", {}).toString());
+    else if (command == "deleteSong")         discardOrDeleteSong (false, {});
+    else if (command == "moveSongsToDrafts")  moveSongsToDrafts (args.getProperty ("paths", {}));
+    else if (command == "exportTracks")       exportTracks();
+    else if (command == "openExportFolder")   openExportFolder();
     else if (command == "saveSong")
     {
         if (! edit->getTransport().isRecording())
@@ -280,7 +291,10 @@ juce::var MainComponent::buildStateObject()
     obj->setProperty ("transport", transport.release());
 
     auto song = std::make_unique<juce::DynamicObject>();
-    song->setProperty ("name", editFile.getFileNameWithoutExtension());
+    song->setProperty ("name", songDisplayName());
+    song->setProperty ("isDraft", isDraftSong());
+    song->setProperty ("hasRecordings", songHasRecordings());
+    song->setProperty ("folder", editFile.getParentDirectory().getFullPathName());
     song->setProperty ("length", length);
     obj->setProperty ("song", song.release());
 
@@ -350,6 +364,10 @@ juce::var MainComponent::buildStateObject()
     obj->setProperty ("mixer", buildMixerState());
     obj->setProperty ("selectedTrackId", getSelectedTrackId());
     obj->setProperty ("inputGainDb", juce::roundToInt (inputGainDb * 10.0f) / 10.0);
+    obj->setProperty ("history", buildHistoryState());
+
+    if (! songList.isVoid())
+        obj->setProperty ("songList", songList);
 
     auto busy = std::make_unique<juce::DynamicObject>();
     busy->setProperty ("diagnosticsAllowed", ! playing && ! recording);

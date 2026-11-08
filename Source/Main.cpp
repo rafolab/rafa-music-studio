@@ -94,6 +94,14 @@ public:
 
     void systemRequestedQuit() override
     {
+        // nepomenovana skladba s nahravkami: najprv sa opytame Ulozit / Zahodit / Zrusit
+        if (mainWindow != nullptr)
+            if (auto* mc = dynamic_cast<MainComponent*> (mainWindow->getContentComponent()))
+            {
+                mc->requestQuit ([] { juce::JUCEApplication::quit(); });
+                return;
+            }
+
         quit();
     }
 

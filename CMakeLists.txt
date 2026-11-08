@@ -69,6 +69,8 @@ target_sources (${TARGET_NAME} PRIVATE
     Source/TempoLoop.cpp
     Source/Mixer.cpp
     Source/Console.cpp
+    Source/History.cpp
+    Source/Projects.cpp
     Source/RafaLookAndFeel.h
     Source/Texts.h)
 

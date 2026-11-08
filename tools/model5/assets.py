@@ -154,8 +154,8 @@ B={ # id: (x,y,w,h) z detekcie, typ
  'loopIn':(1231,426,86,59,'grey'),'loopOut':(1326,421,88,59,'grey'),'loop':(1417,416,91,68,'litgrey'),
  'layer1':(753,594,80,61,'litgrey'),'layer2':(837,591,74,51,'grey'),'layer3':(915,588,73,50,'grey'),'layer4':(992,584,73,50,'grey'),'layerAdd':(1074,580,73,50,'grey'),
  'metroOn':(1308,573,69,45,'litgrey'),
- 'mute1':(240,743,41,37,'cream'),'solo1':(290,742,40,36,'grey2'),'mute2':(367,734,48,46,'litcream'),'solo2':(417,735,43,36,'grey2fix'),
- 'mute3':(501,731,40,40,'cream'),'solo3':(549,728,40,36,'grey2'),'mute4':(628,724,41,36,'cream'),'solo4':(676,722,40,35,'grey2'),
+ 'mute1':(240,743,41,37,'litcream'),'solo1':(290,742,40,36,'grey2'),'mute2':(367,734,48,46,'litcream'),'solo2':(417,735,43,36,'grey2fix'),
+ 'mute3':(501,731,40,40,'cream'),'solo3':(549,728,40,36,'grey2'),'mute4':(628,724,41,36,'litcream'),'solo4':(676,722,40,35,'grey2fix'),
 }
 P=plate.copy()
 def crop(r,pad=(4,4,5,10)):
@@ -212,7 +212,7 @@ for n,r in B.items():
         warped=cv2.warpAffine(refimg,M,(src.shape[1],src.shape[0]),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
         ga=glyph_alpha(src)
         return warped*(1-ga[...,None])+inkcol*ga[...,None]
-    REF={'layer1':'layer2','loop':'loopOut','metroOn':'layer4','mute2':'mute1','solo2':'solo1'}
+    REF={'layer1':'layer2','loop':'loopOut','metroOn':'layer4','mute2':'mute3','mute1':'mute3','mute4':'mute3','solo2':'solo1','solo4':'solo1'}
     if kind=='grey': off=src; on=compose(src,pal['orange'],ink_on,smooth=True)
     elif kind=='litgrey': on=src; off=from_ref(REF[n],ink_off)
     elif kind=='cream': off=src; on=compose(src,pal['creamlit'],ink_m_on)
@@ -234,12 +234,24 @@ for n,r in B.items():
         off=src; L=lum(src); t=np.clip((L-90)/80,0,1)[...,None]
         on=src*(1-t)+np.array([90,190,255],np.float32)*t
     off=np.where(m[...,None]>0,off,src); on=np.where(m[...,None]>0,on,src)
+    # Etapa 2D: M a S – neaktivne neutralne, aktivne M = cervene svetlo, S = zlte svetlo
+    if n.startswith('mute') or n.startswith('solo'):
+        if n.startswith('mute'):
+            # krémové M mierne stlmime, aby vypnute nevyzeralo ako rozsvietene
+            Lo=lum(off)[...,None]; off=off*0.62+Lo*0.38; off=off*0.93
+        ga=glyph_alpha(off); base=erase(off,ga)
+        L=lum(base)/255.0
+        lightc=np.array([52,48,235],np.float32) if n.startswith('mute') else np.array([40,205,255],np.float32)
+        face=np.clip((0.2+1.15*L)[...,None]*lightc,0,255)
+        ink_dark=np.array([30,22,20],np.float32) if n.startswith('solo') else np.array([245,240,240],np.float32)
+        on=face*(1-ga[...,None])+ink_dark*ga[...,None]
+        on=np.where(m[...,None]>0,on,src)
     plate[y0:y1,x0:x1]=src*(1-m[...,None])+off*m[...,None]
     save_sprite(f'btn_{n}_off',off,m); save_sprite(f'btn_{n}_on',on,m)
     ctl['buttons'][n]={'x':x0,'y':y0,'w':x1-x0,'h':y1-y0,'off':f'assets/btn_{n}_off.webp','on':f'assets/btn_{n}_on.webp','kind':kind}
 
 # svatozar okolo povodne svietiacich tlacidiel: ubrat oranzovy presah
-for n in ('layer1','mute2','loop','metroOn'):
+for n in ('layer1','mute1','mute2','mute4','solo4','loop','metroOn'):
     x0,y0,x1,y1=crop(B[n]); R=34
     X0,Y0,X1,Y1=x0-R,y0-R,x1+R,y1+R
     blk=plate[Y0:Y1,X0:X1]; ring=np.ones(blk.shape[:2],np.float32)

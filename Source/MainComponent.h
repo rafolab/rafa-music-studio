@@ -152,6 +152,48 @@ private:
     void requestSave();                                // ulozenie o chvilu (fadery/gombiky posielaju vela zmien)
     juce::uint32 saveDueMs = 0;
     juce::uint32 recordingStartedMs = 0;
+
+    // --- Etapa 2D: historia pokusov (UNDO / REDO) - History.cpp ---
+    struct HistoryEntry
+    {
+        enum Type { take, deleteTrack } type = take;
+        juce::String label;
+        juce::String trackId;
+        juce::ValueTree clipState;          // take: stav nahraneho klipu
+        bool trackCreatedByTake = false;    // take: stopa vznikla az pri nahravani
+        juce::ValueTree trackState;         // stav stopy (pri odstraneni / vrateni)
+        int trackIndex = -1;                // poradie stopy medzi audio stopami
+    };
+    std::vector<HistoryEntry> undoStack, redoStack;
+    bool recordTrackWasCreated = false;
+    void clearHistory();
+    void pushHistory (HistoryEntry);
+    bool undoLast();
+    bool redoLast();
+    void deleteTrackWithHistory (te::AudioTrack&);
+    void removeTrackSafely (te::AudioTrack&);
+    te::AudioTrack* insertTrackFromState (const juce::ValueTree&, int index);
+    juce::var buildHistoryState();
+
+    // --- Etapa 2D: projekty - Projects.cpp ---
+    juce::var songList;                 // zoznam skladieb pre obrazovku (na poziadanie)
+    bool isDraftSong() const;
+    bool songHasRecordings();
+    juce::String songDisplayName() const;
+    void refreshSongList();
+    bool saveSongAs (const juce::String& name);
+    void discardOrDeleteSong (bool onlyDraft, const juce::String& thenOpenPath);
+    void openSongPath (const juce::String& path);
+    void moveSongsToDrafts (const juce::var& paths);
+    void exportTracks();
+    void openExportFolder();
+    void releaseEditFiles();
+    void cleanupEmptyDraft();
+    juce::File lastExportFolder;
+public:
+    /** Pri zatvarani programu: ak je nepomenovana skladba s nahravkami, opyta sa Ulozit / Zahodit / Zrusit. */
+    void requestQuit (std::function<void()> doQuit);
+private:
     void detachOutputMeter();
     void applyInputGain();
     void selectTrack (const juce::String& trackId);

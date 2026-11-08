@@ -4,13 +4,17 @@
 @font-face { font-family: "RafaSans"; src: url("fonts/Montserrat-Medium.woff2") format("woff2"); font-weight: 500; }
 @font-face { font-family: "RafaSans"; src: url("fonts/Montserrat-SemiBold.woff2") format("woff2"); font-weight: 600; }
 
-html, body { margin: 0; height: 100%; background: #140b06; overflow: hidden; user-select: none; -webkit-user-select: none; }
-#viewport { position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 40%, #2a170c 0%, #120904 75%); }
+html, body { margin: 0; min-height: 100%; background: #140b06; overflow-x: hidden; user-select: none; -webkit-user-select: none; }
+html { overflow-y: auto; }
+#viewport { position: absolute; left: 0; top: 0; right: 0; height: 100vh; background: radial-gradient(ellipse at 50% 40%, #2a170c 0%, #120904 75%); }
+body { background: #120904; }
 #stage { position: absolute; left: 0; top: 0; width: 1672px; height: 941px; transform-origin: 0 0; }
 #panel { position: absolute; left: 0; top: 0; width: 1672px; height: 941px; pointer-events: none; }
 #overlay { position: absolute; left: 0; top: 0; pointer-events: none; }
 #sprites, #hit { position: absolute; left: 0; top: 0; width: 1672px; height: 941px; }
 #sprites { pointer-events: none; }
+#hit { pointer-events: none; }
+.hit { pointer-events: auto; }
 
 /* ---------- sprity ---------- */
 .spr { position: absolute; pointer-events: none; will-change: transform; }
@@ -65,14 +69,14 @@ html, body { margin: 0; height: 100%; background: #140b06; overflow: hidden; use
 .d-info { display: flex; gap: 14px; font-size: 10px; color: #d98b33; letter-spacing: .04em; border-bottom: 1px solid rgba(255, 170, 60, .45);
   padding-bottom: 3px; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
 .d-info span:last-child { margin-left: auto; }
-.d-lanes { position: relative; height: 96px; margin-right: 6px; }
-.lane { position: absolute; left: 0; right: 0; height: 24px; display: flex; align-items: center; }
+.d-lanes { position: relative; height: 98px; margin-right: 6px; }
+.lane { position: absolute; left: 0; right: 0; height: 22px; z-index: 1; display: flex; align-items: center; }
 .lane .ln { width: 122px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #ffb547; padding-left: 4px; box-sizing: border-box; }
 .lane .ln b { font-weight: 600; display: inline-block; width: 16px; }
 .lane.sel .ln { color: #ffe0a6; text-shadow: 0 0 8px rgba(255, 190, 90, .9); }
 .lane.muted { opacity: .38; }
 .lane.rec .ln { color: #ff6a45; }
-.lane canvas { flex: 1; height: 22px; }
+.lane canvas { flex: 1; height: 20px; }
 .d-empty { position: absolute; left: 0; right: 0; top: 36px; text-align: center; font-size: 12px; color: #c8822f; }
 .d-playhead { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #ffd27a; box-shadow: 0 0 5px rgba(255, 190, 80, .9); }
 .d-loop { position: absolute; top: 0; bottom: 0; background: rgba(255, 170, 60, .10); border-left: 1px solid rgba(255, 170, 60, .7); border-right: 1px solid rgba(255, 170, 60, .7); }
@@ -80,7 +84,7 @@ html, body { margin: 0; height: 100%; background: #140b06; overflow: hidden; use
 
 /* menu na displeji */
 .d-menu { position: absolute; left: 24px; right: 24px; top: 42px; bottom: 16px; background: #160803;
-  border: 1px solid rgba(255, 170, 60, .45); border-radius: 3px; padding: 8px 10px 22px; font-size: 13px; box-sizing: border-box; }
+  border: 1px solid rgba(255, 170, 60, .45); border-radius: 3px; padding: 8px 10px 22px; font-size: 13px; box-sizing: border-box; z-index: 6; overflow: hidden; }
 .d-menu h4 { margin: 0 0 4px; font-size: 11px; letter-spacing: .12em; font-weight: 600; color: #f2a53e; }
 .d-menu .mi { padding: 1px 8px 1px 14px; height: 19px; line-height: 19px; cursor: pointer; white-space: nowrap; position: relative; }
 .d-menu .mi.sel { background: linear-gradient(90deg, rgba(255, 170, 60, .26), rgba(255, 170, 60, .08)); color: #ffe6b8; }
@@ -89,5 +93,75 @@ html, body { margin: 0; height: 100%; background: #140b06; overflow: hidden; use
 .d-menu .hint { position: absolute; left: 14px; right: 10px; bottom: 6px; font-size: 8.5px; color: #8f5a22; text-shadow: none; letter-spacing: .02em; }
 
 /* bublina hodnoty pri točení gombíkom – nepoužíva sa obdĺžnik nad prvkom, hodnota sa ukáže na displeji */
-.d-value { position: absolute; left: 28px; right: 32px; top: 79px; height: 16px; line-height: 16px; text-align: center; font-size: 12.5px; color: #ffe0a6; background: #170903; border-top: 1px solid rgba(255,170,60,.35); border-bottom: 1px solid rgba(255,170,60,.35); opacity: 0; transition: opacity 200ms; z-index: 3; }
+.d-value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; position: absolute; left: 28px; right: 32px; bottom: 14px; height: 16px; line-height: 16px; text-align: center; font-size: 12.5px; color: #ffe0a6; background: #170903; border-top: 1px solid rgba(255,170,60,.35); border-bottom: 1px solid rgba(255,170,60,.35); opacity: 0; transition: opacity 200ms; z-index: 3; }
 .d-value.show { opacity: 1; }
+
+/* ===== Etapa 2D ===== */
+/* M = červené svetlo, S = žlté svetlo */
+.btn.led-red .glow { box-shadow: 0 0 18px 5px rgba(255, 40, 30, .45); }
+.btn.led-yellow .glow { box-shadow: 0 0 18px 5px rgba(255, 210, 40, .45); }
+
+/* pole LOOP na displeji – klik = dĺžka slučky */
+.d-loopfield { cursor: pointer; padding: 0 6px; border: 1px solid rgba(255, 170, 60, .35); border-radius: 2px; color: #d98b33; }
+.d-loopfield.on { color: #ffd27a; border-color: rgba(255, 190, 90, .8); text-shadow: 0 0 6px rgba(255, 170, 60, .8); }
+.d-loopfield.edit { background: rgba(255, 170, 60, .25); color: #fff0cc; }
+.d-loopfield.rec { color: #ff6a45; border-color: rgba(255, 90, 60, .8); }
+.d-loopfield .boxes { letter-spacing: 1px; margin-left: 4px; }
+.d-loopfield:hover { background: rgba(255, 170, 60, .14); }
+
+/* takty a značky IN/OUT na displeji */
+.d-grid { position: absolute; left: 0; right: 0; top: 0; bottom: 0; pointer-events: none; }
+.d-grid span { position: absolute; top: 0; bottom: 0; font-size: 7px; line-height: 8px; color: #a8692a; padding-left: 2px; border-left: 1px solid rgba(255, 170, 60, .16); }
+.d-loop i { position: absolute; top: 0; font-style: normal; font-size: 7px; font-weight: 600; color: #160803; background: #ffb547; padding: 0 2px; line-height: 9px; }
+.d-loop i.in { left: -1px; }
+.d-loop i.out { right: -1px; }
+.d-loop.off { background: transparent; border-style: dashed; opacity: .55; }
+
+.d-menu h4 .pos { float: right; font-weight: 500; color: #9a6326; letter-spacing: 0; }
+.d-menu .note { font-size: 10.5px; color: #d9a35a; margin: -2px 0 4px; }
+.d-input { width: 100%; box-sizing: border-box; background: #1a0b03; color: #ffd08a; border: 1px solid #c47a2c; font: 500 14px RafaSans, sans-serif; padding: 4px 6px; outline: none; }
+
+/* ===== panel STOPY pod konzolou ===== */
+.tp-tab { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 20; cursor: pointer;
+  font: 600 11px RafaSans, sans-serif; letter-spacing: .12em; color: #ffcf8a; background: linear-gradient(#3a2416, #22130a);
+  border: 1px solid #6b4426; border-bottom: 0; border-radius: 7px 7px 0 0; padding: 4px 18px 5px; box-shadow: 0 -2px 10px rgba(0,0,0,.5); }
+.tp-tab:hover { color: #ffe3b0; }
+.tp-tab.open { background: linear-gradient(#4a2c18, #2a170b); }
+.tp { position: absolute; z-index: 5; box-sizing: border-box; padding: 10px 12px 10px; color: #ffb547;
+  font: 500 12.5px RafaSans, "Segoe UI", sans-serif;
+  background: linear-gradient(#1b0e06, #120803); border: 1px solid #5a3a20; border-radius: 6px;
+  box-shadow: inset 0 0 30px rgba(0,0,0,.7), 0 6px 24px rgba(0,0,0,.6); overflow: hidden; }
+.tp-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.tp-head b { letter-spacing: .14em; color: #f2a53e; }
+.tp-song { color: #c98a3e; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-btns { display: flex; gap: 6px; align-items: center; }
+.tp-sep { width: 10px; }
+.tp button { font: 600 11.5px RafaSans, sans-serif; color: #2a1a10; background: linear-gradient(#e9e3da, #b9b1a6); border: 1px solid #5b4a3a;
+  border-radius: 3px; padding: 3px 10px; cursor: pointer; box-shadow: 0 2px 0 #3a2a1d; }
+.tp button:active { transform: translateY(1px); box-shadow: 0 1px 0 #3a2a1d; }
+.tp button:disabled { opacity: .35; cursor: default; }
+.tp-ruler { position: relative; height: 18px; cursor: pointer; border-bottom: 1px solid rgba(255, 170, 60, .35); }
+.tp-marks { position: absolute; top: 2px; bottom: 0; }
+.tp-marks span { position: absolute; font-size: 9.5px; color: #b9772b; border-left: 1px solid rgba(255, 170, 60, .3); padding-left: 2px; height: 14px; }
+.tp-loop { position: absolute; top: 0; bottom: -2px; background: rgba(255, 170, 60, .14); border-left: 2px solid #ffb547; border-right: 2px solid #ffb547; }
+.tp-loop.off { background: transparent; border-style: dashed; opacity: .5; }
+.tp-loop i { position: absolute; top: 0; font-style: normal; font-size: 9px; font-weight: 600; color: #160803; background: #ffb547; padding: 0 3px; }
+.tp-loop i:first-child { left: 0; } .tp-loop i:last-child { right: 0; }
+.tp-head-line { position: absolute; top: 0; width: 2px; height: 2000px; background: #ffd27a; box-shadow: 0 0 6px rgba(255, 190, 80, .9); pointer-events: none; z-index: 3; }
+.tp-ruler { overflow: visible; }
+.tp-rows { position: relative; max-height: 360px; overflow-y: auto; overflow-x: hidden; }
+.tp-row { display: flex; align-items: center; height: 44px; border-bottom: 1px solid rgba(255, 170, 60, .12); cursor: pointer; }
+.tp-row:hover { background: rgba(255, 170, 60, .05); }
+.tp-row.sel { background: rgba(255, 170, 60, .13); }
+.tp-row.sel .nm { color: #ffe6b8; }
+.tp-row.rec .nm { color: #ff6a45; }
+.tp-row.quiet .tp-wave { opacity: .35; }
+.tp-name { width: 210px; flex: none; display: flex; align-items: center; gap: 6px; padding-right: 8px; box-sizing: border-box; }
+.tp-name .n { width: 18px; text-align: right; color: #9a6326; font-weight: 600; }
+.tp-name .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-name .ms button { padding: 1px 6px; font-size: 10.5px; margin-left: 3px; }
+.tp-name .ms button.m.on { background: linear-gradient(#ff5a4a, #c42818); color: #fff; }
+.tp-name .ms button.s.on { background: linear-gradient(#ffe066, #e0b000); color: #2a1a10; }
+.tp-wave { flex: 1; height: 40px; overflow: hidden; }
+.tp-wave canvas { height: 40px; display: block; }
+.tp-foot { margin-top: 6px; font-size: 10.5px; color: #8f5a22; padding-right: 150px; }

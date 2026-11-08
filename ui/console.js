@@ -11,12 +11,15 @@
   let scale = 1;
 
   // ------------------------------------------------------------------ mierka scény
+  let stageX = 0, stageY = 0;
   function fit () {
-    scale = Math.min(innerWidth / W, innerHeight / H);
-    const x = (innerWidth - W * scale) / 2, y = (innerHeight - H * scale) / 2;
-    stage.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+    const vw = document.documentElement.clientWidth, vh = innerHeight;
+    scale = Math.min(vw / W, vh / H);
+    stageX = (vw - W * scale) / 2; stageY = Math.max(0, (vh - H * scale) / 2);
+    stage.style.transform = `translate(${stageX}px, ${stageY}px) scale(${scale})`;
+    if (window.RafaPanel) RafaPanel.layout();
   }
-  addEventListener("resize", fit); fit();
+  addEventListener("resize", fit);
 
   // ------------------------------------------------------------------ stav
   let st = null;                 // posledný stav z motora
@@ -80,7 +83,8 @@
   // ------------------------------------------------------------------ TLAČIDLÁ
   const BTN = {};
   for (const [id, b] of Object.entries(C.buttons)) {
-    const wrap = el("div", "btn k-" + b.kind, spritesEl, { left: px(b.x), top: px(b.y), width: px(b.w), height: px(b.h) });
+    const extra = id.startsWith("mute") ? " led-red" : id.startsWith("solo") ? " led-yellow" : "";
+    const wrap = el("div", "btn k-" + b.kind + extra, spritesEl, { left: px(b.x), top: px(b.y), width: px(b.w), height: px(b.h) });
     el("div", "glow", wrap);
     const off = el("img", "spr", wrap, { left: 0, top: 0, width: px(b.w), height: px(b.h) }); off.src = b.off;
     const on = el("img", "spr on", wrap, { left: 0, top: 0, width: px(b.w), height: px(b.h) }); on.src = b.on;
@@ -153,7 +157,7 @@
     monitor: { min: 0, max: 1, def: 0, step: 1, name: "MONITOR", snap: true,
       get: () => st && st.monitoring ? 1 : 0,
       set: (v) => send("setMonitoring", { on: v >= 0.5 }),
-      fmt: (v) => v >= 0.5 ? "zapnutý" : "vypnutý" },
+      fmt: (v) => v >= 0.5 ? "ZAP – gitara aj z počítača (môže byť zdvojená)" : "VYP – gitaru počuješ z komba (odporúčané pre BEAM)" },
     volume: { min: -60, max: 6, def: 0, step: 1, name: "VOLUME",
       get: () => st && st.mixer ? Math.max(-60, st.mixer.masterDb) : 0, set: (v) => send("masterVolume", { db: v <= -59.5 ? -100 : Math.round(v * 2) / 2 }),
       fmt: dbTxt },
@@ -213,6 +217,7 @@
       if (hold.knob !== o) return;
       const c = o.cfg, range = c.max - c.min, dy = (startY - ev.clientY) / scale;
       apply(o.cfg.snap ? (dy > 12 ? 1 : dy < -12 ? 0 : startV) : startV + dy / (ev.shiftKey ? 900 : 180) * range, false);
+      if (o.cfg.snap) flashValue(o.cfg.name + " " + o.cfg.fmt(o.local), 2600);
     });
     const end = () => { if (hold.knob === o) { hold.knob = null; apply(o.local ?? knobValue(o), true); } };
     hit.addEventListener("pointerup", end); hit.addEventListener("pointercancel", end);
@@ -361,11 +366,11 @@
   const fmtTime = (s) => { const neg = s < 0; s = Math.abs(s); const m = Math.floor(s / 60), r = s - m * 60; return (neg ? "−" : "") + m + ":" + r.toFixed(3).padStart(6, "0"); };
   const fmtShort = (s) => { const m = Math.floor(s / 60), r = Math.floor(s - m * 60); return m + ":" + String(r).padStart(2, "0"); };
   const LANE_X = 122;
-  const LANE_H = 24;
+  const LANE_H = 22;
   const laneEls = [];
   for (let i = 0; i < 4; i++) {
-    const lane = el("div", "lane", lanesEl, { top: px(i * LANE_H) });
-    const ln = el("div", "ln", lane); const cv = el("canvas", "", lane); cv.width = 290 * 2; cv.height = 22 * 2;
+    const lane = el("div", "lane", lanesEl, { top: px(10 + i * LANE_H) });
+    const ln = el("div", "ln", lane); const cv = el("canvas", "", lane); cv.width = 290 * 2; cv.height = 20 * 2;
     laneEls.push({ lane, ln, cv, sig: "" });
   }
   const loopEl = el("div", "d-loop", lanesEl, { display: "none" });
@@ -373,6 +378,19 @@
   const emptyEl = el("div", "d-empty", lanesEl); emptyEl.textContent = "Zatiaľ žiadna vrstva. Stlač REC a hraj.";
   const pageEl = el("div", "d-page", lanesEl);
   const laneW = () => lanesEl.clientWidth - LANE_X;
+  loopEl.innerHTML = "<i class='in'>IN</i><i class='out'>OUT</i>";
+  const gridEl = el("div", "d-grid", lanesEl); let gridSig = "";
+  function drawGrid (w) {
+    const barLen = st && st.tempo ? 60 / st.tempo.bpm * st.tempo.numerator * (4 / st.tempo.denominator) : 2;
+    const sig = w + ":" + barLen + ":" + viewLength; if (sig === gridSig) return; gridSig = sig;
+    let step = 1; while (viewLength / (barLen * step) > 16) step *= 2;
+    let h = "";
+    for (let b = 0; b * barLen <= viewLength; b += step) {
+      const x = LANE_X + b * barLen / viewLength * w;
+      h += `<span style="left:${x.toFixed(1)}px">${b + 1}</span>`;   // cislo taktu hore, ciara cez vrstvy
+    }
+    gridEl.innerHTML = h;
+  }
 
   function drawWave (le, t) {
     const sig = t ? t.id + ":" + t.clips.length + ":" + viewLength + ":" + (t.clips[0] ? t.clips[0].length + ":" + t.clips[0].start : "") : "";
@@ -404,7 +422,17 @@
     const mp = st.musicalPosition || { bar: 1, beat: 1 };
     $("#dBar").textContent = "T " + (mp.bar || 0) + "." + (mp.beat || 0);
     const lp = st.loop || {};
-    $("#dLoop").textContent = lp.on ? "LOOP " + (Math.round((lp.lengthBars || 0) * 10) / 10) + " T" : "LOOP VYP";
+    const bars = Math.round((lp.lengthBars || 0) * 10) / 10, secs = Math.max(0, (lp.end || 0) - (lp.start || 0));
+    const dl = $("#dLoop");
+    if (t.recording && lp.on && !t.countingIn) {
+      // priebeh nahravania po taktoch: Takt 2 / 4 ■■□□
+      const barLen = secs / Math.max(1, bars), done = clamp(Math.floor(((t.position || 0) - lp.start) / barLen) + 1, 1, Math.ceil(bars));
+      dl.innerHTML = "TAKT " + done + " / " + bars + " <span class='boxes'>" + Array.from({ length: Math.min(16, Math.ceil(bars)) }, (_, i) => i < done ? "■" : "□").join("") + "</span>";
+      dl.className = "d-loopfield rec";
+    } else {
+      dl.textContent = (lp.on ? "LOOP " : "LOOP VYP · ") + bars + " T · " + secs.toFixed(1).replace(".", ",") + " s";
+      dl.className = "d-loopfield" + (lp.on ? " on" : "") + (menu && menu.id === "loopLen" ? " edit" : "");
+    }
     $("#dLength").textContent = "/ " + fmtShort((st.song && st.song.length) || 0);
     // vrstvy
     const sel = selectedId();
@@ -423,77 +451,166 @@
     pageEl.textContent = tracks.length > 4 ? "STOPY " + (page * 4 + 1) + "–" + Math.min(tracks.length, page * 4 + 4) + " / " + tracks.length : "";
     const w = laneW();
     headEl.style.left = px(LANE_X + clamp((t.position || 0) / viewLength, 0, 1) * (w - 2));
-    if (lp.on) { loopEl.style.display = "block"; loopEl.style.left = px(LANE_X + lp.start / viewLength * w); loopEl.style.width = px(Math.max(1, (lp.end - lp.start) / viewLength * w)); }
+    if (lp.on || (menu && menu.id === "loopLen")) { loopEl.style.display = "block"; loopEl.style.left = px(LANE_X + lp.start / viewLength * w); loopEl.style.width = px(Math.max(1, (lp.end - lp.start) / viewLength * w)); loopEl.classList.toggle("off", !lp.on); }
     else loopEl.style.display = "none";
+    drawGrid(w);
   }
   const escapeHtml = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   // ------------------------------------------------------------------ MENU na displeji
-  let menu = null;  // { id, title, items:[{t, act, dis}], sel }
+  let menu = null;  // { id, title, items:[{t, act, dis, sub}], sel, parent }
   const menuEl = $("#dMenu");
+  const LOOP_BARS = [1, 2, 4, 8, 16];
+  const isDraftWithTakes = () => st && st.song && st.song.isDraft && st.song.hasRecordings;
+
+  // odchod z nepomenovanej skladby s nahravkami: Uložiť / Zahodiť / Zrušiť
+  function leaveSong (thenAct, thenOpenPath) {
+    if (!isDraftWithTakes()) { thenAct(); return; }
+    openMenu({ id: "leave", title: "SKLADBA NIE JE POMENOVANÁ", items: [
+      { t: "Uložiť ako…", act: () => askText("NÁZOV SKLADBY", "", (name) => { send("saveSongAs", { name }); afterSave(thenAct); }) },
+      { t: "Zahodiť (do koša Windows)", act: () => thenOpenPath === "new" ? send("discardSong", {}) : send("discardSong", { thenOpen: thenOpenPath || "" }) },
+      { t: "Zrušiť", act: () => {} } ] });
+  }
+  // po "Ulozit ako" pockame, kym motor skladbu premenuje, az potom pokracujeme
+  function afterSave (thenAct) {
+    const t0 = performance.now();
+    const tick = () => {
+      if (st && st.song && !st.song.isDraft) { thenAct(); return; }
+      if (performance.now() - t0 < 4000) setTimeout(tick, 100);
+    };
+    setTimeout(tick, 150);
+  }
+  let pendingSongList = null;
+  function withSongList (fn) {
+    send("listSongs"); pendingSongList = fn;
+  }
+
   function buildMenu (id) {
-    const editing = !(st && st.busy && st.busy.editingAllowed === false);
+    const editing = !(st && st.busy && st.busy.editingAllowed === false) && !rec();
     const t = selectedTrack();
+    const h = (st && st.history) || {};
+    const draft = st && st.song && st.song.isDraft;
     const M = {
       project: { title: "PROJECT", items: [
-        { t: "Nová skladba", act: () => send("newSong"), dis: !editing },
-        { t: "Otvoriť skladbu", act: () => send("openSong"), dis: !editing },
-        { t: "Uložiť skladbu", act: () => needs(4, "Uložiť skladbu") && send("saveSong"), dis: !has(4) },
+        { t: "Nová skladba", act: () => leaveSong(() => send("newSong"), "new"), dis: !editing },
+        { t: "Otvoriť skladbu…", act: () => withSongList(showSongList), dis: !editing },
+        { t: draft ? "Uložiť skladbu… (pomenovať)" : "Uložiť skladbu", act: () => draft ? askText("NÁZOV SKLADBY", "", (n) => send("saveSongAs", { name: n })) : send("saveSong"), dis: rec() },
+        { t: "Uložiť ako…", act: () => askText("NÁZOV SKLADBY", draft ? "" : (st.song.name + " 2"), (n) => send("saveSongAs", { name: n })), dis: rec() },
+        { t: "Exportovať mix (WAV)", act: () => send("exportMix"), dis: !editing },
+        { t: "Exportovať stopy (WAV pre Sonar)", act: () => send("exportTracks"), dis: !editing || !has(5) },
+        { t: "Otvoriť priečinok exportu", act: () => send("openExportFolder"), dis: !has(5) },
         { t: "Otvoriť priečinok skladby", act: () => send("openSongFolder") },
-        { t: "Exportovať mix", act: () => send("exportMix"), dis: !editing } ] },
+        { t: "Upratať staré skladby…", act: () => withSongList(showCleanup), dis: !editing },
+        { t: "Odstrániť túto skladbu…", act: () => confirmBox("ODSTRÁNIŤ SKLADBU „" + st.song.name + "“?", "Presunie sa do koša Windows.", () => send("deleteSong")), dis: !editing } ] },
       tracks: { title: "TRACKS", items: [
-        { t: "Pridať stopu", act: () => needs(4, "Pridať stopu") && send("trackAdd"), dis: !has(4) },
-        { t: "Vybrať stopu…", sub: () => tracks.map((x, i) => ({ t: (i + 1) + "  " + x.name, act: () => { localSel = x.id; page = Math.floor(i / 4); if (has(4)) send("selectTrack", { trackId: x.id }); } })), dis: !tracks.length },
+        { t: "Vrátiť pokus  (Ctrl+Z)", act: () => send("undo"), dis: !h.canUndo || rec() },
+        { t: "Obnoviť  (Ctrl+Y)", act: () => send("redo"), dis: !h.canRedo || rec() },
+        { t: "Pridať stopu", act: () => send("trackAdd"), dis: !editing },
+        { t: "Vybrať stopu…", sub: () => tracks.map((x, i) => ({ t: (i + 1) + "  " + x.name, act: () => pickTrack(x) })), dis: !tracks.length },
         { t: "Premenovať stopu", act: () => renameTrack(), dis: !t },
-        { t: t && t.muted ? "Zrušiť stlmenie stopy" : "Stlmiť stopu", act: () => t && send("trackMute", { trackId: t.id, muted: !t.muted }), dis: !t },
-        { t: "Odstrániť stopu", act: () => t && send("trackDelete", { trackId: t.id }), dis: !t || !editing },
+        { t: "Odstrániť stopu  (Delete)", act: () => t && send("trackDelete", { trackId: t.id }), dis: !t || !editing },
+        { t: "Panel stôp  (T)", act: () => window.RafaPanel && RafaPanel.toggle() },
         ...(tracks.length > 4 ? [{ t: "Ďalšie kanály (stopy " + (((page + 1) % Math.ceil(tracks.length / 4)) * 4 + 1) + "–)", act: () => { page = (page + 1) % Math.ceil(tracks.length / 4); } }] : []) ] },
       effects: { title: "EFFECTS", items: [ { t: "Efekty pribudnú v ďalšej etape.", dis: true } ] },
       settings: { title: "SETTINGS", items: [
         { t: "Nastavenia zvuku", act: () => send("openAudioSettings"), dis: !editing },
         { t: "Vstupné zariadenie…", sub: () => (st && st.inputs || []).map(x => ({ t: (x.id === st.selectedInput ? "● " : "  ") + x.name, act: () => send("selectInput", { id: x.id }) })), dis: !editing },
         { t: "Výstupné zariadenie", act: () => send("openAudioSettings"), dis: !editing },
-        { t: "Monitoring: " + (st && st.monitoring ? "zapnutý" : "vypnutý"), act: () => send("setMonitoring", { on: !(st && st.monitoring) }) },
+        { t: "Monitoring: " + (st && st.monitoring ? "ZAP (gitara aj z počítača)" : "VYP (gitara z komba)"), act: () => send("setMonitoring", { on: !(st && st.monitoring) }) },
+        { t: "Dĺžka slučky…", act: () => openLoopLen(), dis: rec() },
         { t: "Metrum…", sub: () => [[2, 4], [3, 4], [4, 4], [5, 4], [6, 8], [7, 8]].map(([n, d]) => ({ t: n + "/" + d, act: () => send("setTimeSignature", { numerator: n, denominator: d }) })), dis: rec() },
         { t: "Odpočítanie…", sub: () => [0, 1, 2].map(b => ({ t: b === 0 ? "bez odpočítania" : b + (b === 1 ? " takt" : " takty"), act: () => send("setCountIn", { bars: b }) })) },
         { t: "Diagnostika", act: () => send("runDiagnostics"), dis: !(st && st.busy && st.busy.diagnosticsAllowed !== false) } ] },
     };
     return Object.assign({ id, sel: 0 }, M[id]);
   }
+  function pickTrack (x) {
+    const i = tracks.indexOf(x); localSel = x.id; page = Math.max(0, Math.floor(i / 4));
+    send("selectTrack", { trackId: x.id }); flashValue("Vybraná vrstva: " + x.name);
+  }
+  function openMenu (m) { menu = Object.assign({ sel: 0 }, m); menu.sel = Math.max(0, menu.items.findIndex(i => !i.dis)); drawMenu(); }
   function toggleMenu (id) {
     if (menu && menu.id === id && !menu.parent) { closeMenu(); return; }
-    menu = buildMenu(id); menu.sel = Math.max(0, menu.items.findIndex(i => !i.dis)); drawMenu();
+    openMenu(buildMenu(id));
+  }
+  function openLoopLen () {
+    const lp = (st && st.loop) || {}, barSec = Math.max(0.001, (lp.end - lp.start) / Math.max(0.001, lp.lengthBars || 4));
+    const cur = Math.round(lp.lengthBars || 4);
+    openMenu({ id: "loopLen", title: "DĹŽKA SLUČKY", items: LOOP_BARS.map(b => ({
+      t: (b === cur ? "● " : "   ") + b + (b === 1 ? " takt" : b < 5 ? " takty" : " taktov") + "  ·  " + (b * barSec).toFixed(1).replace(".", ",") + " s",
+      act: () => { send("setLoopBars", { bars: b }); if (!(st.loop && st.loop.on)) send("setLoop", { on: true }); flashValue("LOOP " + b + " T · " + (b * barSec).toFixed(1).replace(".", ",") + " s – zapnutý"); } })) });
+    menu.sel = Math.max(0, LOOP_BARS.indexOf(cur));
+    drawMenu();
+  }
+  $("#dLoop").addEventListener("click", () => { if (!rec()) (menu && menu.id === "loopLen") ? closeMenu() : openLoopLen(); });
+
+  function showSongList (list) {
+    const items = [];
+    for (const x of list) items.push({ t: (x.current ? "● " : "   ") + (x.draft ? x.name : x.name), act: () => { if (!x.current) leaveSong(() => send("openSongPath", { path: x.path }), x.path); } });
+    if (!items.length) items.push({ t: "Zatiaľ žiadne skladby.", dis: true });
+    openMenu({ id: "songs", title: "OTVORIŤ SKLADBU", items });
+  }
+  function showCleanup (list) {
+    const old = list.filter(x => !x.draft && !x.current);
+    const chosen = new Set();
+    const build = () => {
+      const items = old.map(x => ({ t: (chosen.has(x.path) ? "☑ " : "☐ ") + x.name + "  ·  " + x.modified, keep: true, act: () => { chosen.has(x.path) ? chosen.delete(x.path) : chosen.add(x.path); const sel = menu.sel; openMenu(build()); menu.sel = sel; drawMenu(); } }));
+      items.push({ t: "▶ Presunúť vybrané (" + chosen.size + ") do Rozpracované", dis: !chosen.size, act: () => confirmBox("PRESUNÚŤ " + chosen.size + " SKLADIEB?", "Najprv sa vytvorí záloha v priečinku Záloha.", () => send("moveSongsToDrafts", { paths: [...chosen] })) });
+      return { id: "cleanup", title: "UPRATAŤ – vyber skladby", items };
+    };
+    if (!old.length) { flashValue("Žiadne pomenované skladby na upratanie"); return; }
+    openMenu(build());
+  }
+  function confirmBox (title, text, yes) {
+    openMenu({ id: "confirm", title, note: text, items: [ { t: "Áno", act: yes }, { t: "Nie", act: () => {} } ] });
+    menu.sel = 1; drawMenu();
   }
   function closeMenu () { menu = null; menuEl.hidden = true; render(); }
+  let lastMenuHtml = "";
+  function drawMenuQuiet () { const r = render; render = () => {}; drawMenu(); render = r; }
+  const MENU_ROWS = 5;
   function drawMenu () {
     if (!menu) return;
     menuEl.hidden = false;
-    menuEl.innerHTML = "<h4>" + menu.title + "</h4>" + menu.items.map((it, i) =>
-      `<div class="mi${i === menu.sel ? " sel" : ""}${it.dis ? " dis" : ""}" data-i="${i}">${escapeHtml(it.t)}</div>`).join("") +
+    const n = menu.items.length, first = clamp(menu.sel - Math.floor(MENU_ROWS / 2), 0, Math.max(0, n - MENU_ROWS));
+    const rows = menu.items.slice(first, first + MENU_ROWS).map((it, k) => { const i = first + k;
+      return `<div class="mi${i === menu.sel ? " sel" : ""}${it.dis ? " dis" : ""}" data-i="${i}">${escapeHtml(it.t)}</div>`; }).join("");
+    menuEl.innerHTML = "<h4>" + escapeHtml(menu.title) + (n > MENU_ROWS ? `<span class="pos">${menu.sel + 1}/${n}</span>` : "") + "</h4>" +
+      (menu.note ? `<div class="note">${escapeHtml(menu.note)}</div>` : "") + rows +
       `<div class="hint">DATA: otočiť = pohyb, klik = vybrať, ${menu.parent ? "Esc = späť" : "tlačidlo = zavrieť"}</div>`;
     render();
   }
-  menuEl.addEventListener("pointerover", (ev) => { const i = ev.target.dataset && ev.target.dataset.i; if (i !== undefined && menu) { menu.sel = +i; drawMenu(); } });
+  menuEl.addEventListener("pointerover", (ev) => { const i = ev.target.dataset && ev.target.dataset.i; if (i !== undefined && menu && menu.sel !== +i) { menu.sel = +i; drawMenu(); } });
   menuEl.addEventListener("click", (ev) => { const i = ev.target.dataset && ev.target.dataset.i; if (i !== undefined && menu) { menu.sel = +i; menuEnter(); } });
-  function menuMove (dir) { if (!menu || !menu.items.length) return; menu.sel = (menu.sel + dir + menu.items.length) % menu.items.length; drawMenu(); }
+  menuEl.addEventListener("wheel", (ev) => { if (menu && menu.items.length) { ev.preventDefault(); menuMove(ev.deltaY > 0 ? 1 : -1); } }, { passive: false });
+  function menuMove (dir) { if (!menu || !menu.items.length) return; menu.sel = clamp(menu.sel + dir, 0, menu.items.length - 1); drawMenu(); }
   function menuEnter () {
     if (!menu) return; const it = menu.items[menu.sel]; if (!it || it.dis) return;
-    if (it.sub) { const items = it.sub(); menu = { id: menu.id, title: menu.title + " › " + it.t.replace("…", ""), items, sel: 0, parent: menu }; drawMenu(); return; }
-    if (it.act) it.act(); closeMenu();
+    if (it.sub) { const items = it.sub(); const parent = menu; openMenu({ id: menu.id, title: menu.title + " › " + it.t.replace("…", "").trim(), items, parent }); return; }
+    const m = menu;
+    if (!it.keep) closeMenu();
+    if (it.act) it.act();
+    if (it.keep && menu === m) drawMenu();
   }
   function menuBack () { if (menu && menu.parent) { menu = menu.parent; drawMenu(); } else closeMenu(); }
-  function renameTrack () {
-    const t = selectedTrack(); if (!t) return;
+
+  // textove pole na displeji (premenovanie stopy, nazov skladby)
+  function askText (title, value, done) {
     menuEl.hidden = false;
-    menuEl.innerHTML = `<h4>PREMENOVAŤ STOPU</h4><input id="dRename" maxlength="40" style="width:100%;box-sizing:border-box;background:#1a0b03;color:#ffd08a;border:1px solid #c47a2c;font:500 14px RafaSans,sans-serif;padding:4px 6px" value="${escapeHtml(t.name)}"><div class="hint">Enter = uložiť · Esc = zrušiť</div>`;
-    menu = { id: "rename", title: "", items: [], sel: 0 };
-    const inp = $("#dRename"); setTimeout(() => { inp.focus(); inp.select(); }, 0);
+    menuEl.innerHTML = `<h4>${escapeHtml(title)}</h4><input id="dText" maxlength="60" class="d-input" value="${escapeHtml(value)}"><div class="hint">Enter = uložiť · Esc = zrušiť</div>`;
+    menu = { id: "text", title: "", items: [], sel: 0 };
+    const inp = $("#dText"); setTimeout(() => { inp.focus(); inp.select(); }, 0);
     inp.addEventListener("keydown", (ev) => {
       ev.stopPropagation();
-      if (ev.key === "Enter") { const v = inp.value.trim(); if (v) send("trackRename", { trackId: t.id, name: v }); closeMenu(); }
+      if (ev.key === "Enter") { const v = inp.value.trim(); closeMenu(); if (v) done(v); }
       if (ev.key === "Escape") closeMenu();
     });
   }
+  function renameTrack (tr) {
+    const t = tr || selectedTrack(); if (!t) return;
+    askText("PREMENOVAŤ STOPU", t.name, (v) => send("trackRename", { trackId: t.id, name: v }));
+  }
+  function deleteSelected () { const t = selectedTrack(); if (t && !rec()) send("trackDelete", { trackId: t.id }); }
 
   // ------------------------------------------------------------------ klávesnica
   addEventListener("keydown", (ev) => {
@@ -504,18 +621,23 @@
       if (ev.key === "Enter") { menuEnter(); ev.preventDefault(); return; }
       if (ev.key === "Escape" || ev.key === "Backspace") { menuBack(); ev.preventDefault(); return; }
     }
-    if (ev.repeat) return;
     const k = ev.key.toLowerCase();
-    if (k === "r") send("record");
+    if ((ev.ctrlKey || ev.metaKey) && k === "z" && !ev.shiftKey) { send("undo"); ev.preventDefault(); return; }
+    if ((ev.ctrlKey || ev.metaKey) && (k === "y" || (k === "z" && ev.shiftKey))) { send("redo"); ev.preventDefault(); return; }
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    if (ev.repeat) return;
+    if (ev.key === "Delete") { deleteSelected(); ev.preventDefault(); }
+    else if (k === "r") send("record");
     else if (k === " ") { send("togglePlay"); ev.preventDefault(); }
     else if (ev.key === "Home") send("rewind");
     else if (k === "l") send("toggleLoop");
+    else if (k === "t") { if (window.RafaPanel) RafaPanel.toggle(); }
     else if (ev.key === "ArrowRight") jogStep(1, ev.shiftKey);
     else if (ev.key === "ArrowLeft") jogStep(-1, ev.shiftKey);
   });
 
   // ------------------------------------------------------------------ vykreslenie stavu
-  function render () {
+  let render = function () {
     if (!st) return;
     const t = st.transport || {}, now = performance.now();
     const isFlash = (id) => flashing[id] && flashing[id] > now;
@@ -540,7 +662,8 @@
       if (hold.knob !== o) drawKnob(o, knobAngle(o.cfg, knobValue(o)));
     }
     renderDisplay();
-  }
+    RafaPanel.update();
+  };
 
   // LED metronómu: bliká na dobu, prvá doba taktu jasnejšie
   let lastBeat = "";
@@ -572,13 +695,136 @@
   }
   requestAnimationFrame(frame);
 
+  // ------------------------------------------------------------------ PANEL STÔP (pod konzolou, okno sa posúva)
+  const RafaPanel = window.RafaPanel = (() => {
+    const tab = el("button", "tp-tab", document.body); tab.type = "button";
+    const pnl = el("div", "tp", document.body); pnl.hidden = true;
+    pnl.innerHTML = `
+      <div class="tp-head">
+        <b>STOPY</b><span class="tp-song"></span>
+        <span class="tp-btns">
+          <button data-a="add">+ Pridať</button>
+          <button data-a="rename">Premenovať</button>
+          <button data-a="delete">Odstrániť</button>
+          <span class="tp-sep"></span>
+          <button data-a="undo" title="">↶ UNDO</button>
+          <button data-a="redo">↷ REDO</button>
+        </span>
+      </div>
+      <div class="tp-ruler"><div class="tp-marks"></div><div class="tp-loop"><i>IN</i><i>OUT</i></div><div class="tp-head-line"></div></div>
+      <div class="tp-rows"></div>
+      <div class="tp-foot"></div>`;
+    const rowsEl = pnl.querySelector(".tp-rows"), ruler = pnl.querySelector(".tp-ruler"), marks = pnl.querySelector(".tp-marks"),
+          loopR = pnl.querySelector(".tp-loop"), headR = pnl.querySelector(".tp-head-line"), foot = pnl.querySelector(".tp-foot");
+    const NAME_W = 210;
+    let open = false, rowEls = new Map(), marksSig = "";
+
+    function layout () {
+      const w = W * scale;
+      Object.assign(pnl.style, { left: px(stageX), width: px(w), top: px(stageY + H * scale + 6) });
+      document.body.style.height = open ? px(stageY + H * scale + 6 + pnl.offsetHeight + 40) : "";
+      tab.textContent = open ? "▼ STOPY  (T)" : "▲ STOPY  (T)";
+      tab.classList.toggle("open", open);
+    }
+    function toggle (force) {
+      open = force === undefined ? !open : !!force; pnl.hidden = !open; update(true); layout();
+      if (open) setTimeout(() => pnl.scrollIntoView({ behavior: "smooth", block: "end" }), 30);
+      else scrollTo({ top: 0, behavior: "smooth" });
+    }
+    tab.addEventListener("click", () => toggle());
+    pnl.querySelector(".tp-btns").addEventListener("click", (ev) => {
+      const a = ev.target.dataset && ev.target.dataset.a; if (!a || ev.target.disabled) return;
+      if (a === "add") send("trackAdd");
+      else if (a === "rename") renameTrack();
+      else if (a === "delete") deleteSelected();
+      else if (a === "undo") send("undo");
+      else if (a === "redo") send("redo");
+    });
+    // klik do casovej osi = presun hlavy
+    ruler.addEventListener("click", (ev) => {
+      if (rec()) return;
+      const r = marks.getBoundingClientRect(); const t = clamp((ev.clientX - r.left) / r.width, 0, 1) * viewLength;
+      send("seek", { seconds: t });
+    });
+
+    function laneWidth () { return Math.max(100, pnl.clientWidth - NAME_W - 24); }
+    function drawRow (r, t, w) {
+      const sig = t.id + ":" + t.clips.map(c => c.start + "/" + c.length + "/" + (c.peaks ? c.peaks.length : 0)).join(",") + ":" + viewLength + ":" + w;
+      if (r.sig === sig) return; r.sig = sig;
+      const cv = r.cv, dpr = 2; cv.width = w * dpr; cv.height = 40 * dpr; cv.style.width = px(w);
+      const g = cv.getContext("2d"); g.clearRect(0, 0, cv.width, cv.height);
+      const sx = cv.width / viewLength, mid = cv.height / 2;
+      for (const c of t.clips) {
+        const x0 = c.start * sx, cw = Math.max(2, c.length * sx);
+        g.fillStyle = "rgba(255,170,60,.10)"; g.fillRect(x0, 2, cw, cv.height - 4);
+        g.strokeStyle = "rgba(255,170,60,.45)"; g.lineWidth = 1; g.strokeRect(x0 + .5, 2.5, cw - 1, cv.height - 5);
+        const pk = c.peaks || []; if (!pk.length) continue;
+        g.fillStyle = "#ffb547"; const step = cw / pk.length;
+        for (let i = 0; i < pk.length; i++) { const h = Math.max(1, pk[i] * (mid - 6)); g.fillRect(x0 + i * step, mid - h, Math.max(1, step * .85), h * 2); }
+      }
+    }
+    function update (force) {
+      if (!open || !st) return;
+      const lp = st.loop || {}, t = st.transport || {}, sel = selectedId(), h = st.history || {};
+      const w = laneWidth(), anySolo = tracks.some(x => x.solo);
+      pnl.querySelector(".tp-song").textContent = (st.song ? st.song.name : "") + (st.song && st.song.isDraft ? "  (nepomenovaná – PROJECT › Uložiť ako…)" : "");
+      const b = (n) => pnl.querySelector(`[data-a="${n}"]`);
+      b("undo").disabled = !h.canUndo || rec(); b("undo").textContent = "↶ UNDO" + (h.canUndo ? "" : "");
+      b("undo").title = h.undoLabel ? "Vrátiť: " + h.undoLabel : "";
+      b("redo").disabled = !h.canRedo || rec(); b("redo").title = h.redoLabel ? "Obnoviť: " + h.redoLabel : "";
+      b("rename").disabled = !selectedTrack(); b("delete").disabled = !selectedTrack() || rec(); b("add").disabled = rec();
+      // casova os (takty)
+      const barLen = st.tempo ? 60 / st.tempo.bpm * st.tempo.numerator * (4 / st.tempo.denominator) : 2;
+      const msig = w + ":" + barLen + ":" + viewLength;
+      if (msig !== marksSig) {
+        marksSig = msig; let step = 1; while (viewLength / (barLen * step) > 24) step *= 2; let hh = "";
+        for (let k = 0; k * barLen <= viewLength + 1e-6; k += step) hh += `<span style="left:${(k * barLen / viewLength * w).toFixed(1)}px">${k + 1}</span>`;
+        marks.innerHTML = hh;
+      }
+      marks.style.width = px(w); marks.style.left = px(NAME_W);
+      loopR.style.display = lp.end > lp.start ? "block" : "none";
+      loopR.classList.toggle("off", !lp.on);
+      loopR.style.left = px(NAME_W + lp.start / viewLength * w); loopR.style.width = px(Math.max(2, (lp.end - lp.start) / viewLength * w));
+      headR.style.left = px(NAME_W + clamp((t.position || 0) / viewLength, 0, 1) * w);
+      // riadky
+      const seen = new Set();
+      tracks.forEach((tr, i) => {
+        seen.add(tr.id);
+        let r = rowEls.get(tr.id);
+        if (!r) {
+          const row = el("div", "tp-row", rowsEl);
+          row.innerHTML = `<div class="tp-name"><span class="n"></span><span class="nm"></span><span class="ms"><button class="m">M</button><button class="s">S</button></span></div><div class="tp-wave"><canvas></canvas></div>`;
+          r = { row, cv: row.querySelector("canvas"), nm: row.querySelector(".nm"), n: row.querySelector(".n"), m: row.querySelector(".m"), s: row.querySelector(".s"), sig: "" };
+          row.addEventListener("click", (ev) => { if (ev.target.tagName !== "BUTTON") pickTrack(tracks.find(x => x.id === tr.id) || tr); });
+          r.nm.addEventListener("dblclick", () => renameTrack(tracks.find(x => x.id === tr.id)));
+          r.m.addEventListener("click", () => { const x = tracks.find(y => y.id === tr.id); if (x) send("trackMute", { trackId: x.id, muted: !x.muted }); });
+          r.s.addEventListener("click", () => { const x = tracks.find(y => y.id === tr.id); if (x) send("trackSolo", { trackId: x.id, solo: !x.solo }); });
+          rowEls.set(tr.id, r);
+        }
+        if (rowsEl.children[i] !== r.row) rowsEl.insertBefore(r.row, rowsEl.children[i] || null);
+        r.n.textContent = i + 1; r.nm.textContent = tr.name;
+        r.row.classList.toggle("sel", tr.id === sel); r.row.classList.toggle("rec", !!tr.recording);
+        r.row.classList.toggle("quiet", !!tr.muted || (anySolo && !tr.solo));
+        r.m.classList.toggle("on", !!tr.muted); r.s.classList.toggle("on", !!tr.solo);
+        drawRow(r, tr, w);
+      });
+      for (const [id, r] of rowEls) if (!seen.has(id)) { r.row.remove(); rowEls.delete(id); }
+      foot.textContent = tracks.length ? "Klik = vybrať · dvojklik na názov = premenovať · klik do časovej osi = presun · Ctrl+Z / Ctrl+Y = vrátiť / obnoviť pokus · Delete = odstrániť stopu"
+                                       : "Zatiaľ žiadna stopa – stlač REC na konzole.";
+      if (force) layout();
+    }
+    let lastH = 0;
+    return { layout, toggle, update: () => { update(false); if (open && pnl.offsetHeight !== lastH) { lastH = pnl.offsetHeight; layout(); } }, get open () { return open; } };
+  })();
+
   // ------------------------------------------------------------------ motor
   let lastStatus = "";
   Rafa.on("state", (s) => {
     const stx = s && s.status ? s.status.text : "";
     if (stx && stx !== lastStatus && lastStatus !== "") flashValue(stx, s.status.level === "error" || s.status.level === "warn" ? 3500 : 2200);
     lastStatus = stx || lastStatus;
-    st = s; if (menu && ["project", "tracks", "effects", "settings"].includes(menu.id) && !menu.parent) { const m = buildMenu(menu.id); m.sel = menu.sel; menu = m; drawMenu(); } else render(); });
+    st = s;
+    if (pendingSongList && s.songList) { const fn = pendingSongList; pendingSongList = null; fn(s.songList); } if (menu && ["project", "tracks", "effects", "settings"].includes(menu.id) && !menu.parent) { const m = buildMenu(menu.id); m.sel = menu.sel; menu = m; drawMenuQuiet(); } render(); });
   Rafa.on("tracks", (t) => {
     tracks = (t && t.tracks) || []; viewLength = (t && t.viewLength) || 30;
     if (page * 4 >= tracks.length) page = Math.max(0, Math.ceil(tracks.length / 4) - 1);
@@ -586,6 +832,7 @@
     for (const le of laneEls) le.sig = "";
     render();
   });
+  fit();
   send("uiReady");
   window.RafaConsole = { render, get state () { return st; }, get tracks () { return tracks; } };
 })();

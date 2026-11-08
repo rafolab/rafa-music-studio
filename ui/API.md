@@ -1,6 +1,6 @@
 # RAFA MUSIC STUDIO – API medzi obrazovkou (HTML) a motorom (C++)
 
-**Verzia API: 4**  ·  vlastník mosta: Claude  ·  zmeny len po dohode (pozri `KOORDINACIA.md`)
+**Verzia API: 5**  ·  vlastník mosta: Claude  ·  zmeny len po dohode (pozri `KOORDINACIA.md`)
 
 Obrazovka používa iba dve funkcie z `ui/rafa-bridge.js`:
 
@@ -10,7 +10,7 @@ Rafa.send("selectInput", { id: "in-1" });   // príkaz s parametrami
 Rafa.on("state",  s => { ... });            // pravidelný stav (cca 20× za sekundu)
 Rafa.on("tracks", t => { ... });            // zoznam stôp (len keď sa zmení)
 Rafa.isSimulation                           // true = otvorené v prehliadači bez programu
-Rafa.apiVersion                             // 4
+Rafa.apiVersion                             // 5
 ```
 
 `rafa-bridge.js` načítaj ako prvý skript: `<script src="rafa-bridge.js"></script>`.
@@ -56,6 +56,25 @@ Klávesové skratky rieši UI a posiela príkazy: **R** → `record`, **medzern�
 | `setLoopRange` | `{ start: s, end: s }` | Presný rozsah slučky v sekundách. |
 | `loopIn` | – | LOOP IN = aktuálna pozícia prehrávacej hlavy, zarovnaná na najbližšiu dobu. Ak by bol za LOOP OUT, slučka si zachová dĺžku. |
 | `loopOut` | – | LOOP OUT = aktuálna pozícia, zarovnaná na najbližšiu dobu. Musí byť za LOOP IN, inak sa ignoruje a v `status` príde upozornenie. |
+
+### Príkazy pridané v API 5 – etapa 2D (UNDO, skladby, export stôp)
+
+| Príkaz | Parametre | Čo spraví |
+| --- | --- | --- |
+| `undo` | – | Vráti posledný pokus (nahrávku) alebo odstránenie stopy. Počas nahrávania nič nespraví. Najviac 20 krokov. |
+| `redo` | – | Obnoví posledný vrátený krok. Nový pokus vetvu REDO ukončí. |
+| `listSongs` | – | Motor pošle v `state.songList` zoznam skladieb (`Skladby` aj `Rozpracované`). |
+| `openSongPath` | `{ path }` | Otvorí skladbu zo zoznamu. |
+| `saveSongAs` | `{ name }` | Nepomenovanú skladbu presunie do `Skladby/<name>`, pomenovanú skopíruje. Ak názov existuje, nič nespraví a ohlási to. |
+| `discardSong` | `{ thenOpen? }` | Nepomenovanú skladbu presunie do koša Windows, potom otvorí `thenOpen` alebo novú skladbu. |
+| `deleteSong` | – | Aktuálnu skladbu presunie do koša Windows a otvorí novú. Obrazovka sa vopred opýta. |
+| `moveSongsToDrafts` | `{ paths: [] }` | Vybrané pomenované skladby presunie do `Rozpracované`; najprv ich skopíruje do `Záloha/<dátum>`. |
+| `exportTracks` | – | Každá stopa ako samostatný surový WAV (bez fadera, PAN a M/S), všetky od 0 s a rovnako dlhé – pre Cakewalk Sonar. |
+| `openExportFolder` | – | Otvorí priečinok s exportmi. |
+
+Zvukové súbory sa pri UNDO ani pri odstránení stopy nemažú. Stopa obnovená cez UNDO dostane nové `id` (meno, nastavenia a poradie ostanú).
+
+Polia pridané v API 5: `song.isDraft`, `song.hasRecordings`, `song.folder`, `history { canUndo, canRedo, undoLabel, redoLabel }`, `songList` (po `listSongs`).
 
 ### Príkazy pridané v API 4 – konzola Model 5
 
@@ -209,6 +228,7 @@ Poznámky:
 | Verzia | Zmena |
 | --- | --- |
 | 1 | Prvá verzia: transport, vstup, merač, stopy, skladby, export, diagnostika |
+| 5 | Etapa 2D: `undo`, `redo`, `listSongs`, `openSongPath`, `saveSongAs`, `discardSong`, `deleteSong`, `moveSongsToDrafts`, `exportTracks`, `openExportFolder` |
 | 4 | Konzola Model 5: `selectTrack`, `trackAdd`, `setInputGain`, `saveSong`; v `state` pribudli `selectedTrackId`, `inputGainDb`, `mixer.masterLevelL/R` |
 | 3 | Mix: `trackVolume`, `trackPan`, `trackSolo`, `masterVolume`; v `tracks` pribudli `solo`, `volumeDb`, `pan`; v `state` pribudol `mixer` (úrovne stôp) |
 | 2 | Tempo, metrum, metronóm, odpočítanie, LOOP (IN/OUT/dĺžka v taktoch, nahrávanie vrstiev v slučke), `transport.countingIn`, `musicalPosition`, kláves L |

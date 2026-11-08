@@ -29,4 +29,20 @@ namespace RafaPaths
         f.createDirectory();
         return f;
     }
+
+    /** Nepomenovane skladby (automaticka zaloha prace): Dokumenty/RAFA MUSIC STUDIO/Rozpracované */
+    inline juce::File getDraftsFolder()
+    {
+        auto f = getRootFolder().getChildFile (juce::CharPointer_UTF8 ("Rozpracovan\xc3\xa9"));
+        f.createDirectory();
+        return f;
+    }
+
+    /** Zalohy pred presunom skladieb: Dokumenty/RAFA MUSIC STUDIO/Záloha */
+    inline juce::File getBackupFolder()
+    {
+        auto f = getRootFolder().getChildFile (juce::CharPointer_UTF8 ("Z\xc3\xa1loha"));
+        f.createDirectory();
+        return f;
+    }
 }

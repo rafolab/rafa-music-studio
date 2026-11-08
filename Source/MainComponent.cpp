@@ -351,12 +351,15 @@ void MainComponent::setStatus (const juce::String& text, juce::Colour colour)
 //==============================================================================
 void MainComponent::createNewSong()
 {
-    auto name = "Skladba " + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H-%M");
-    auto folder = RafaPaths::getSongsFolder().getNonexistentChildFile (name, {}, false);
+    cleanupEmptyDraft();
+
+    // nepomenovana skladba: vlastny jednoznacny priecinok v Rozpracované
+    auto name = sk ("Bez názvu ") + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H-%M-%S");
+    auto folder = RafaPaths::getDraftsFolder().getNonexistentChildFile (name, {}, false);
     folder.createDirectory();
 
     loadEdit (folder.getChildFile (folder.getFileName() + ".tracktionedit"));
-    setStatus (sk ("Nová skladba vytvorená."));
+    setStatus (sk ("Nová skladba. Pomenuješ ju cez PROJECT › Uložiť ako…"));
 }
 
 void MainComponent::openSong()
@@ -384,6 +387,7 @@ void MainComponent::closeEdit()
 
     edit->getTransport().stop (false, false);
     saveEdit();
+    clearHistory();
     detachAllTrackMeters();
     edit->getTransport().removeChangeListener (this);
     trackList.setEdit (nullptr);
@@ -424,7 +428,7 @@ void MainComponent::loadEdit (const juce::File& file)
     trackList.setEdit (edit.get());
     resized();
 
-    songLabel.setText (editFile.getFileNameWithoutExtension(), juce::dontSendNotification);
+    songLabel.setText (songDisplayName(), juce::dontSendNotification);
     settings->setValue ("lastSong", editFile.getFullPathName());
     settings->saveIfNeeded();
 
@@ -678,10 +682,13 @@ te::AudioTrack* MainComponent::prepareTrackForRecording()
     if (target == nullptr && ! tracks.isEmpty() && tracks.getLast()->getClips().isEmpty())
         target = tracks.getLast();
 
+    recordTrackWasCreated = false;
+
     if (target == nullptr)
     {
         edit->ensureNumberOfAudioTracks (tracks.size() + 1);
         target = te::getAudioTracks (*edit).getLast();
+        recordTrackWasCreated = true;
     }
 
     if (target == nullptr)
@@ -913,6 +920,15 @@ void MainComponent::checkFinishedRecording()
         if (file.existsAsFile() && file.getSize() > 0 && seconds > 0.0)
         {
             pendingRecordingCheck = false;
+
+            HistoryEntry h;
+            h.type = HistoryEntry::take;
+            h.label = sk ("pokus v stope „") + track->getName() + sk ("“");
+            h.trackId = track->itemID.toString();
+            h.clipState = newClip->state.createCopy();
+            h.trackCreatedByTake = recordTrackWasCreated;
+            pushHistory (std::move (h));
+
             saveEdit();
             if (transport.looping && transport.isPlaying())
                 setStatus (sk ("Vrstva uložená (") + juce::String (seconds, 1)
@@ -946,8 +962,8 @@ void MainComponent::deleteTrack (te::AudioTrack& t)
     auto options = juce::MessageBoxOptions{}
                        .withIconType (juce::MessageBoxIconType::QuestionIcon)
                        .withTitle (sk ("Zmazať stopu"))
-                       .withMessage (sk ("Naozaj zmazať stopu „") + name + sk ("“?\n(Zvukový súbor ostane v priečinku skladby.)"))
-                       .withButton (sk ("Zmazať"), 1)
+                       .withMessage (sk ("Naozaj odstrániť stopu „") + name + sk ("“?\n(Dá sa vrátiť cez UNDO – Ctrl+Z. Zvukový súbor ostane v priečinku skladby.)"))
+                       .withButton (sk ("Odstrániť"), 1)
                        .withButton (sk ("Zrušiť"), 0);
 
     juce::AlertWindow::showAsync (options, [safeThis, trackPtr, editAtRequest] (int result)
@@ -962,23 +978,8 @@ void MainComponent::deleteTrack (te::AudioTrack& t)
              || ! te::getAudioTracks (ed).contains (trackPtr.get()))
             return;
 
-        safeThis->edit->getTransport().stop (false, false);
-
-        // merac stopy odpojime skor, nez stopa zanikne
-        auto meterIt = safeThis->trackMeters.find (trackPtr->itemID.toString());
-
-        if (meterIt != safeThis->trackMeters.end())
-        {
-            if (meterIt->second.measurer != nullptr && meterIt->second.client != nullptr)
-                meterIt->second.measurer->removeClient (*meterIt->second.client);
-
-            safeThis->trackMeters.erase (meterIt);
-        }
-
-        safeThis->edit->deleteTrack (trackPtr.get());
-        safeThis->saveEdit();
-        safeThis->trackList.refreshIfChanged();
-        safeThis->setStatus (sk ("Stopa zmazaná."));
+        // odstranenie ide do historie - da sa vratit cez UNDO (Ctrl+Z)
+        safeThis->deleteTrackWithHistory (*trackPtr);
     });
 }
 
