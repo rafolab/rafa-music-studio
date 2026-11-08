@@ -95,7 +95,7 @@
     hit.addEventListener("pointercancel", up);
   }
   const lit = (id, on) => BTN[id] && BTN[id].wrap.classList.toggle("lit", !!on);
-  const blink = (id, on) => BTN[id] && BTN[id].wrap.classList.toggle("blink", !!on);
+  const armed = (id, on) => BTN[id] && BTN[id].wrap.classList.toggle("armed", !!on);
   const flash = (id) => { lit(id, true); setTimeout(() => render(), 220); flashing[id] = performance.now() + 220; };
   const flashing = {};
 
@@ -182,7 +182,8 @@
     o.angle = angleDeg;
     const k = o.k, a = angleDeg * Math.PI / 180, s = Math.sin(a), c = Math.cos(a);
     const r0 = o.k === C.knobs.jog ? 0.55 : 0.32, r1 = 0.86;
-    const x0 = k.cx + s * k.rx * r0, y0 = k.cy - c * k.ry * r0, x1 = k.cx + s * k.rx * r1, y1 = k.cy - c * k.ry * r1;
+    const pd = o.pressed ? 1.2 : 0;
+    const x0 = k.cx + s * k.rx * r0, y0 = k.cy - c * k.ry * r0 + pd, x1 = k.cx + s * k.rx * r1, y1 = k.cy - c * k.ry * r1 + pd;
     o.ln.setAttribute("x1", x0); o.ln.setAttribute("y1", y0); o.ln.setAttribute("x2", x1); o.ln.setAttribute("y2", y1);
     o.sh.setAttribute("x1", x0 + 0.6); o.sh.setAttribute("y1", y0 + 0.9); o.sh.setAttribute("x2", x1 + 0.6); o.sh.setAttribute("y2", y1 + 0.9);
   }
@@ -233,17 +234,30 @@
   function setupJog (hit, o) {
     let lastA = null, rest = 0;
     const ang = (ev) => { const r = hit.getBoundingClientRect(); return Math.atan2(ev.clientX - (r.left + r.width / 2), -(ev.clientY - (r.top + r.height / 2))) * 180 / Math.PI; };
-    hit.addEventListener("pointerdown", (ev) => { if (ev.button !== 0) return; hit.setPointerCapture(ev.pointerId); lastA = ang(ev); rest = 0; hold.jog = true; hit.style.cursor = "grabbing"; });
+    let moved = 0;
+    hit.addEventListener("pointerdown", (ev) => { if (ev.button !== 0) return; hit.setPointerCapture(ev.pointerId); lastA = ang(ev); rest = 0; moved = 0; hold.jog = true; hit.style.cursor = "grabbing"; hit.classList.add("active"); o.pressed = true; drawKnob(o, jogAcc); });
     hit.addEventListener("pointermove", (ev) => {
       if (!hold.jog) return; let a = ang(ev), d = a - lastA; if (d > 180) d -= 360; if (d < -180) d += 360; lastA = a;
-      jogAcc += d; drawKnob(o, jogAcc); rest += d;
+      jogAcc += d; moved += Math.abs(d); drawKnob(o, jogAcc); rest += d;
       while (rest >= 15) { rest -= 15; jogStep(+1, ev.shiftKey); }
       while (rest <= -15) { rest += 15; jogStep(-1, ev.shiftKey); }
     });
-    const end = () => { hold.jog = false; hit.style.cursor = ""; };
+    const end = (ev) => {
+      if (!hold.jog) return; hold.jog = false; hit.style.cursor = ""; o.pressed = false; drawKnob(o, jogAcc);
+      setTimeout(() => hit.classList.remove("active"), 250);
+      if (ev.type === "pointerup" && moved < 6) jogPress();      // krátke stlačenie bez otočenia = vybrať
+    };
     hit.addEventListener("pointerup", end); hit.addEventListener("pointercancel", end);
-    hit.addEventListener("wheel", (ev) => { ev.preventDefault(); const d = ev.deltaY < 0 ? 1 : -1; jogAcc += d * 15; drawKnob(o, jogAcc); jogStep(d, ev.shiftKey); }, { passive: false });
-    hit.addEventListener("dblclick", () => { if (menu) menuEnter(); });
+    let wheelT = 0;
+    hit.addEventListener("wheel", (ev) => { ev.preventDefault(); const d = ev.deltaY < 0 ? 1 : -1; jogAcc += d * 15; drawKnob(o, jogAcc); hit.classList.add("active"); clearTimeout(wheelT); wheelT = setTimeout(() => hit.classList.remove("active"), 300); jogStep(d, ev.shiftKey); }, { passive: false });
+  }
+  // stlačenie DATA: v menu vyberie položku, inak otvorí rýchly výber vrstvy
+  function jogPress () {
+    if (menu) { menuEnter(); return; }
+    if (!tracks.length) { flashValue("Zatiaľ žiadna vrstva"); return; }
+    const items = tracks.map((x, i) => ({ t: (i + 1) + "  " + x.name, act: () => { localSel = x.id; page = Math.floor(i / 4); if (has(4)) send("selectTrack", { trackId: x.id }); flashValue("Vybraná vrstva: " + x.name); } }));
+    menu = { id: "select", title: "VÝBER VRSTVY", items, sel: Math.max(0, tracks.findIndex(x => x.id === selectedId())) };
+    drawMenu();
   }
   function jogStep (dir, big) {
     if (menu) return menuMove(dir);
@@ -345,10 +359,11 @@
   const fmtTime = (s) => { const neg = s < 0; s = Math.abs(s); const m = Math.floor(s / 60), r = s - m * 60; return (neg ? "−" : "") + m + ":" + r.toFixed(3).padStart(6, "0"); };
   const fmtShort = (s) => { const m = Math.floor(s / 60), r = Math.floor(s - m * 60); return m + ":" + String(r).padStart(2, "0"); };
   const LANE_X = 122;
+  const LANE_H = 24;
   const laneEls = [];
   for (let i = 0; i < 4; i++) {
-    const lane = el("div", "lane", lanesEl, { top: px(i * 26) });
-    const ln = el("div", "ln", lane); const cv = el("canvas", "", lane); cv.width = 310 * 2; cv.height = 26 * 2;
+    const lane = el("div", "lane", lanesEl, { top: px(i * LANE_H) });
+    const ln = el("div", "ln", lane); const cv = el("canvas", "", lane); cv.width = 290 * 2; cv.height = 22 * 2;
     laneEls.push({ lane, ln, cv, sig: "" });
   }
   const loopEl = el("div", "d-loop", lanesEl, { display: "none" });
@@ -405,7 +420,7 @@
     emptyEl.style.display = tracks.length ? "none" : "block";
     pageEl.textContent = tracks.length > 4 ? "STOPY " + (page * 4 + 1) + "–" + Math.min(tracks.length, page * 4 + 4) + " / " + tracks.length : "";
     const w = laneW();
-    headEl.style.left = px(LANE_X + clamp((t.position || 0) / viewLength, 0, 1) * w);
+    headEl.style.left = px(LANE_X + clamp((t.position || 0) / viewLength, 0, 1) * (w - 2));
     if (lp.on) { loopEl.style.display = "block"; loopEl.style.left = px(LANE_X + lp.start / viewLength * w); loopEl.style.width = px(Math.max(1, (lp.end - lp.start) / viewLength * w)); }
     else loopEl.style.display = "none";
   }
@@ -453,7 +468,7 @@
     menuEl.hidden = false;
     menuEl.innerHTML = "<h4>" + menu.title + "</h4>" + menu.items.map((it, i) =>
       `<div class="mi${i === menu.sel ? " sel" : ""}${it.dis ? " dis" : ""}" data-i="${i}">${escapeHtml(it.t)}</div>`).join("") +
-      `<div class="hint">točiť DATA · klik = vybrať · ${menu.parent ? "← späť" : "tlačidlo = zavrieť"}</div>`;
+      `<div class="hint">DATA: otočiť = pohyb, klik = vybrať, ${menu.parent ? "Esc = späť" : "tlačidlo = zavrieť"}</div>`;
     render();
   }
   menuEl.addEventListener("pointerover", (ev) => { const i = ev.target.dataset && ev.target.dataset.i; if (i !== undefined && menu) { menu.sel = +i; drawMenu(); } });
@@ -502,7 +517,7 @@
     if (!st) return;
     const t = st.transport || {}, now = performance.now();
     const isFlash = (id) => flashing[id] && flashing[id] > now;
-    lit("play", t.playing && !t.recording); lit("rec", t.recording); blink("rec", t.countingIn);
+    lit("play", t.playing && !t.recording); lit("rec", t.recording && !t.countingIn); armed("rec", t.countingIn);
     lit("stop", isFlash("stop")); lit("rewind", isFlash("rewind")); lit("loopIn", isFlash("loopIn")); lit("loopOut", isFlash("loopOut")); lit("layerAdd", isFlash("layerAdd"));
     lit("loop", st.loop && st.loop.on); lit("metroOn", st.metronome && st.metronome.on);
     for (const m of ["project", "tracks", "effects", "settings"]) lit(m, menu && menu.id === m);
@@ -546,7 +561,7 @@
     const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
     const [tl, tr] = vuTargets();
     for (const [side, target] of [["L", tl], ["R", tr]]) {
-      const o = vuSide[side], vu = clamp(target + 18, -23, 3.6);   // 0 VU = −18 dBFS
+      const o = vuSide[side], vu = clamp(target + 18, -21.8, 3.3);   // 0 VU = −18 dBFS
       o.val += (vu - o.val) * (1 - Math.exp(-dt / 0.3 * 3));
       drawNeedle(o, vuAngle(o.val));
     }
@@ -556,7 +571,7 @@
   requestAnimationFrame(frame);
 
   // ------------------------------------------------------------------ motor
-  Rafa.on("state", (s) => { st = s; if (menu && menu.id !== "rename" && !menu.parent) { const m = buildMenu(menu.id); m.sel = menu.sel; menu = m; drawMenu(); } else render(); });
+  Rafa.on("state", (s) => { st = s; if (menu && ["project", "tracks", "effects", "settings"].includes(menu.id) && !menu.parent) { const m = buildMenu(menu.id); m.sel = menu.sel; menu = m; drawMenu(); } else render(); });
   Rafa.on("tracks", (t) => {
     tracks = (t && t.tracks) || []; viewLength = (t && t.viewLength) || 30;
     if (page * 4 >= tracks.length) page = Math.max(0, Math.ceil(tracks.length / 4) - 1);

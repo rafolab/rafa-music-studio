@@ -320,7 +320,7 @@ window.RAFA_CONTROLS = {
    "h": 50,
    "off": "assets/btn_solo2_off.webp",
    "on": "assets/btn_solo2_on.webp",
-   "kind": "grey2"
+   "kind": "grey2fix"
   },
   "mute3": {
    "x": 497,

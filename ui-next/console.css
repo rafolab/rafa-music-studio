@@ -23,8 +23,10 @@ html, body { margin: 0; height: 100%; background: #140b06; overflow: hidden; use
   box-shadow: 0 0 22px 6px rgba(255, 158, 40, .35); }
 .btn.k-rec .glow { box-shadow: 0 0 26px 8px rgba(255, 40, 20, .45); }
 .btn.k-menu .glow { box-shadow: none; }
-.btn.blink.lit .on { animation: blink 0.5s steps(1) infinite; }
-@keyframes blink { 50% { opacity: .25; } }
+.btn.armed .on { animation: armed 0.9s ease-in-out infinite; }
+.btn.armed .glow { opacity: .5; }
+@keyframes armed { 0%, 100% { opacity: .15; } 50% { opacity: .55; } }
+.hit.jog.active::after { opacity: 1; background: radial-gradient(closest-side, rgba(255, 200, 120, .22), rgba(255, 200, 120, .06) 65%, transparent); }
 .led .on { opacity: 0; transition: opacity 40ms; }
 .led.lit .on { opacity: 1; }
 .led .halo { position: absolute; inset: 2px; border-radius: 4px; opacity: 0; box-shadow: 0 0 14px 5px rgba(255, 170, 40, .55); transition: opacity 40ms; }
@@ -44,7 +46,7 @@ html, body { margin: 0; height: 100%; background: #140b06; overflow: hidden; use
 
 /* ---------- displej ---------- */
 #display { position: absolute; left: 0; top: 0; width: 472px; height: 220px; transform-origin: 0 0; overflow: hidden;
-  box-sizing: border-box; padding: 14px 18px 10px 20px;
+  box-sizing: border-box; padding: 18px 26px 16px 28px;
   font-family: "RafaSans", "Segoe UI", sans-serif; font-weight: 500; color: #ffb547;
   text-shadow: 0 0 6px rgba(255, 150, 30, .55);
   background: radial-gradient(ellipse at 50% 30%, rgba(60, 28, 6, .25), transparent 70%); }
@@ -63,28 +65,29 @@ html, body { margin: 0; height: 100%; background: #140b06; overflow: hidden; use
 .d-info { display: flex; gap: 14px; font-size: 10px; color: #d98b33; letter-spacing: .04em; border-bottom: 1px solid rgba(255, 170, 60, .45);
   padding-bottom: 3px; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
 .d-info span:last-child { margin-left: auto; }
-.d-lanes { position: relative; height: 104px; }
-.lane { position: absolute; left: 0; right: 0; height: 26px; display: flex; align-items: center; }
+.d-lanes { position: relative; height: 96px; margin-right: 6px; }
+.lane { position: absolute; left: 0; right: 0; height: 24px; display: flex; align-items: center; }
 .lane .ln { width: 122px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #ffb547; padding-left: 4px; box-sizing: border-box; }
 .lane .ln b { font-weight: 600; display: inline-block; width: 16px; }
 .lane.sel .ln { color: #ffe0a6; text-shadow: 0 0 8px rgba(255, 190, 90, .9); }
 .lane.muted { opacity: .38; }
 .lane.rec .ln { color: #ff6a45; }
-.lane canvas { flex: 1; height: 26px; }
+.lane canvas { flex: 1; height: 22px; }
 .d-empty { position: absolute; left: 0; right: 0; top: 36px; text-align: center; font-size: 12px; color: #c8822f; }
 .d-playhead { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #ffd27a; box-shadow: 0 0 5px rgba(255, 190, 80, .9); }
 .d-loop { position: absolute; top: 0; bottom: 0; background: rgba(255, 170, 60, .10); border-left: 1px solid rgba(255, 170, 60, .7); border-right: 1px solid rgba(255, 170, 60, .7); }
 .d-page { position: absolute; right: 0; bottom: -2px; font-size: 9px; color: #c8822f; }
 
 /* menu na displeji */
-.d-menu { position: absolute; left: 14px; right: 14px; top: 34px; bottom: 10px; background: #160803;
-  border: 1px solid rgba(255, 170, 60, .55); border-radius: 3px; padding: 6px 10px; font-size: 13px; }
+.d-menu { position: absolute; left: 24px; right: 24px; top: 42px; bottom: 16px; background: #160803;
+  border: 1px solid rgba(255, 170, 60, .45); border-radius: 3px; padding: 8px 10px 22px; font-size: 13px; box-sizing: border-box; }
 .d-menu h4 { margin: 0 0 4px; font-size: 11px; letter-spacing: .12em; font-weight: 600; color: #f2a53e; }
-.d-menu .mi { padding: 2px 6px; border-radius: 2px; cursor: pointer; white-space: nowrap; }
-.d-menu .mi.sel { background: rgba(255, 170, 60, .22); color: #ffe0a6; }
+.d-menu .mi { padding: 1px 8px 1px 14px; height: 19px; line-height: 19px; cursor: pointer; white-space: nowrap; position: relative; }
+.d-menu .mi.sel { background: linear-gradient(90deg, rgba(255, 170, 60, .26), rgba(255, 170, 60, .08)); color: #ffe6b8; }
+.d-menu .mi.sel::before { content: ""; position: absolute; left: 4px; top: 6px; width: 0; height: 0; border-left: 5px solid #ffc164; border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
 .d-menu .mi.dis { opacity: .4; }
-.d-menu .hint { position: absolute; right: 10px; bottom: 6px; font-size: 9px; color: #b9772b; }
+.d-menu .hint { position: absolute; left: 14px; right: 10px; bottom: 6px; font-size: 8.5px; color: #8f5a22; text-shadow: none; letter-spacing: .02em; }
 
 /* bublina hodnoty pri točení gombíkom – nepoužíva sa obdĺžnik nad prvkom, hodnota sa ukáže na displeji */
-.d-value { position: absolute; left: 0; right: 0; top: 52px; text-align: center; font-size: 13px; color: #ffe0a6; opacity: 0; transition: opacity 200ms; }
+.d-value { position: absolute; left: 28px; right: 32px; top: 79px; height: 16px; line-height: 16px; text-align: center; font-size: 12.5px; color: #ffe0a6; background: #170903; border-top: 1px solid rgba(255,170,60,.35); border-bottom: 1px solid rgba(255,170,60,.35); opacity: 0; transition: opacity 200ms; z-index: 3; }
 .d-value.show { opacity: 1; }

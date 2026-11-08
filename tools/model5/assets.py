@@ -34,50 +34,113 @@ F={'f1':dict(top=(255,522),bot=(280,720),marks={6:538,0:597,-12:655,-100:710},ca
    'f3':dict(top=(505,510),bot=(537,707),marks={6:526,0:586,-12:645,-100:699},cap=(493,547,550,607),groove=570),
    'f4':dict(top=(628,505),bot=(665,698),marks={6:520,0:580,-12:640,-100:692},cap=(630,613,688,673),groove=637)}
 orig_plate=plate.copy()
+from PIL import ImageFont, ImageDraw
+FONT=ImageFont.truetype('/tmp/fonts/Montserrat.ttf',60); FONT.set_variation_by_axes([550])
+def slotfun(f):
+    (tx,ty),(bx,by)=f['top'],f['bot']; sl=(bx-tx)/(by-ty); return (lambda y: tx+(y-ty)*sl), sl
+def draw_text_alpha(text,cap):
+    img=Image.new('L',(400,120),0); d=ImageDraw.Draw(img); d.text((10,10),text,font=FONT,fill=255)
+    img=img.crop(img.getbbox()); hb=FONT.getbbox('0'); s_=cap/(hb[3]-hb[1])
+    return np.asarray(img.resize((max(1,int(img.width*s_)),max(1,int(img.height*s_))),Image.LANCZOS)).astype(np.float32)/255
+def stamp(img,alpha,x,y,color):
+    h,w=alpha.shape; x=int(round(x)); y=int(round(y))
+    img[y:y+h,x:x+w]=img[y:y+h,x:x+w]*(1-alpha[...,None])+np.array(color,np.float32)*alpha[...,None]
+def hline(img,y,xa,xb,color,th=1.6):
+    # vodorovna ryzka s antialiasingom
+    for yy in range(int(np.floor(y-th)),int(np.ceil(y+th))+1):
+        a_=np.clip(th/2+0.5-abs(yy-y),0,1)
+        if a_<=0: continue
+        xs=np.arange(int(np.floor(xa)),int(np.ceil(xb))+1)
+        ax=np.clip(np.minimum(xs-xa+1,xb-xs+1),0,1)*a_
+        img[yy,xs]=img[yy,xs]*(1-ax[:,None])+np.array(color,np.float32)*ax[:,None]
+# spolocne parametre z cistych miest povodneho obrazka
+prof=[]
 for n,f in F.items():
-    (tx,ty),(bx,by)=f['top'],f['bot']; slant=(bx-tx)/(by-ty)
-    slotx=lambda y: tx+(y-ty)*slant
-    x0,y0,x1,y1=f['cap']
-    Wy0,Wy1=int(max(y0-26,ty+14)),int(min(y1+36,by-14))
-    if f['groove']<600: cs,ce=Wy1+2,int(by-14)
-    else: cs,ce=int(ty+14),Wy0-2
-    # perioda ryzok z autokorelacie
-    ysr=np.arange(cs,ce); col=np.array([lum(orig_plate[y,int(slotx(y))+18]) for y in ysr]); col-=col.mean()
-    ac=[(col[:-k]*col[k:]).mean() for k in range(10,22)]; per=10+int(np.argmax(ac))
-    Lp=per*max(1,(ce-cs)//per)
-    rows=[]
-    for yy in range(Wy0,Wy1):
-        sx=slotx(yy); xl=int(round(sx-46)); xr=int(round(sx+40))
-        sy=cs+((yy-cs)%Lp); off=int(round(slotx(sy)-sx))
-        rows.append((yy,xl,xr,off,sy))
-    for (yy,xl,xr,off,sy) in rows:
-        seg=orig_plate[sy,xl+off:xr+off].copy()
-        lab_end=int(round(slotx(yy)-29))-xl
-        panel=np.median(orig_plate[sy,xl+off:xl+off+lab_end].reshape(-1,3),0)
-        seg[:lab_end]=panel
-        plate[yy,xl:xr]=seg
-    # vratit povodne napisy (0, +6...) v stlpci napisov, zosvetlene o tien
-    for (yy,xl,xr,off,sy) in rows:
-        lab_end=int(round(slotx(yy)-29))
-        o=orig_plate[yy,xl:lab_end]; L=lum(o)
-        m=L>70
-        if m.any():
-            plate[yy,xl:lab_end][m]=np.clip(o[m]*1.25,0,255)
-    # mäkké okraje okna
-    Wx0=int(min(r[1] for r in rows)); Wx1=int(max(r[2] for r in rows))
-    blk=plate[Wy0-8:Wy1+8,Wx0-8:Wx1+8]; ob=orig_plate[Wy0-8:Wy1+8,Wx0-8:Wx1+8]
-    msk=np.zeros(blk.shape[:2],np.float32)
-    for (yy,xl,xr,off,sy) in rows: msk[yy-Wy0+8, xl-Wx0+8+3: xr-Wx0+8-3]=1
-    msk[:12]*=0; msk[-12:]*=0
-    msk=cv2.GaussianBlur(msk,(0,0),3.5)[...,None]
-    plate[Wy0-8:Wy1+8,Wx0-8:Wx1+8]=ob*(1-msk)+blk*msk
-    # sprite hlavicky z povodneho
+    slotx,_=slotfun(f); x0,y0,x1,y1=f['cap']; (tx,ty),(bx,by)=f['top'],f['bot']
+    for y in range(int(ty+20),int(by-20)):
+        if y0-35<=y<=y1+45: continue
+        cx=slotx(y); xs=np.arange(-12,13)
+        row=np.array([orig_plate[y,int(np.floor(cx+d))]*(1-((cx+d)%1))+orig_plate[y,int(np.floor(cx+d))+1]*((cx+d)%1) for d in xs])
+        prof.append(row)
+prof=np.median(np.array(prof),0)            # priečny rez drážkou (25 bodov)
+tickcol=np.array([205,208,212],np.float32)  # farba ryziek (BGR)
+labcol=np.array([214,216,220],np.float32)
+DIV=[(182,210),(312,342),(438,473),(563,602),(695,740)]
+divx=lambda i,y: DIV[i][0]+(DIV[i][1]-DIV[i][0])*(y-500)/220
+for n,f in F.items():
+    slotx,slant=slotfun(f); (tx,ty),(bx,by)=f['top'],f['bot']; x0,y0,x1,y1=f['cap']
+    Y0,Y1=int(ty-16),int(by+16)
+    fi=int(n[1])-1
+    XL=lambda y: int(round(divx(fi,y)+4)); XR=lambda y: int(round(divx(fi+1,y)-3))
+    # 1) podklad panelu: hladky priebeh farby z cisteho stlpca vpravo od ryziek
+    ys=[];cs=[]
+    for y in range(Y0,Y1):
+        if y0-35<=y<=y1+50: continue
+        xr=XR(y)-12; ys.append(y); cs.append(np.median(orig_plate[y,xr:xr+8].reshape(-1,3),0))
+    ys=np.array(ys); cs=np.array(cs)
+    coef=[np.polyfit(ys,cs[:,k],2) for k in range(3)]
+    rng=np.random.default_rng(int(n[1]))
+    for y in range(Y0,Y1):
+        xl=XL(y); xr=XR(y)
+        base=np.array([np.polyval(coef[k],y) for k in range(3)],np.float32)
+        plate[y,xl:xr]=base+rng.normal(0,1.1,(xr-xl,1)).astype(np.float32)
+    # mäkký prechod na okrajoch oblasti do povodneho
+    # 2) drážka (kapsula) podla priecneho rezu
+    R_=7.0
+    for y in range(Y0,Y1):
+        cx=slotx(y)
+        dt=min(y-(ty-6), (by+6)-y)
+        if dt<0: continue
+        k_=1.0 if dt>=R_ else np.sqrt(max(0,1-((R_-dt)/R_)**2))
+        xs_=np.arange(int(np.floor(cx-14)),int(np.ceil(cx+15)))
+        dd=(xs_-cx)/max(k_,1e-3)
+        col=np.stack([np.interp(dd,np.arange(-12,13),prof[:,c_]) for c_ in range(3)],1)
+        w_=np.clip(12.5-np.abs(dd),0,1)*(1.0 if k_>0.05 else 0)
+        plate[y,xs_]=plate[y,xs_]*(1-w_[:,None])+col*w_[:,None]
+    # 3) ryzky: 4 dieliky medzi znackami; vlavo kratke (pri znackach dlhsie), vpravo dlhe
+    mk=[f['marks'][6],f['marks'][0],f['marks'][-12],f['marks'][-100]]
+    ticks=[]
+    for i in range(3):
+        for j in range(4): ticks.append((mk[i]+(mk[i+1]-mk[i])*j/4, j==0))
+    ticks.append((mk[3],True))
+    for (y,major) in ticks:
+        cx=slotx(y)
+        hline(plate,y+1,cx-(25 if major else 21),cx-11,tickcol,1.5)
+        hline(plate,y-2,cx+12,cx+(31 if major else 28),tickcol,1.5)
+    # 4) napisy +6, 0, -12, -∞ (zarovnane vpravo pred ryzkou)
+    for txt,y in (('+6',mk[0]),('0',mk[1]),('-12',mk[2]),('-∞',mk[3])):
+        al=draw_text_alpha(txt.replace('-','−'),9.5)
+        stamp(plate,al,slotx(y)-30-al.shape[1],y-al.shape[0]/2+0.5,labcol)
+    # mäkké okraje oblasti
+for n,f in F.items():
+    slotx,_=slotfun(f); (tx,ty),(bx,by)=f['top'],f['bot']
+    Y0,Y1=int(ty-16),int(by+16)
+    fi=int(n[1])-1
+    XL=lambda y: int(round(divx(fi,y)+4)); XR=lambda y: int(round(divx(fi+1,y)-3))
+    for y in list(range(Y0,Y0+4))+list(range(Y1-4,Y1)):
+        w_=(min(y-Y0,Y1-1-y)+0.5)/4
+        xl=XL(y); xr=XR(y)
+        plate[y,xl:xr]=orig_plate[y,xl:xr]*(1-w_)+plate[y,xl:xr]*w_
+    for y in range(Y0,Y1):
+        xl=XL(y); xr=XR(y)
+        for k in range(2):
+            w_=(k+0.5)/2
+            plate[y,xl+k]=orig_plate[y,xl+k]*(1-w_)+plate[y,xl+k]*w_
+            plate[y,xr-1-k]=orig_plate[y,xr-1-k]*(1-w_)+plate[y,xr-1-k]*w_
+# 5) sprity hlaviciek: plna hlavicka + mäkký tien (len tmavsie miesta, vyhladene)
+for n,f in F.items():
+    slotx,slant=slotfun(f); x0,y0,x1,y1=f['cap']
     S=(x0-8,y0-10,x1+12,y1+20)
     o=orig_plate[S[1]:S[3],S[0]:S[2]]; r=plate[S[1]:S[3],S[0]:S[2]]
-    d=np.abs(o-r).max(2); al=np.clip((d-8)/26,0,1); al=cv2.GaussianBlur(al,(3,3),0)
-    inner=np.zeros_like(al); inner[(y0-S[1])+2:(y1-S[1])-1,(x0-S[0])+2:(x1-S[0])-2]=1
-    al=np.maximum(al,inner)
-    save_sprite(f'fader_{n}',o,al)
+    inner=np.zeros(o.shape[:2],np.float32); inner[(y0-S[1])+1:(y1-S[1]),(x0-S[0])+1:(x1-S[0])-1]=1
+    edge=cv2.dilate(inner,np.ones((5,5),np.uint8))
+    d=np.abs(o-r).max(2); al_edge=np.clip((d-14)/30,0,1)*edge
+    dark=np.clip((lum(r)-lum(o)),0,None); dark=cv2.GaussianBlur(dark,(0,0),3)
+    shadow=np.clip(dark/max(1,lum(r).mean()),0,0.85)
+    ring=cv2.GaussianBlur(cv2.dilate(inner,np.ones((21,21),np.uint8)),(0,0),3)
+    al=np.maximum(np.maximum(inner,al_edge),shadow*ring)
+    col=np.where(inner[...,None]>0.5,o,o*0+np.where((al_edge>0)[...,None],o,0))
+    save_sprite(f'fader_{n}',np.where((inner+al_edge)[...,None]>0,o,np.zeros_like(o)),al)
     ctl['faders'][n]={'sprite':f'assets/fader_{n}.webp','x':S[0],'y':S[1],'w':S[2]-S[0],'h':S[3]-S[1],
         'grooveY':f['groove'],'slant':round(slant,4),'marks':{str(k):v for k,v in f['marks'].items()},
         'track':int(n[1])-1}
@@ -91,7 +154,7 @@ B={ # id: (x,y,w,h) z detekcie, typ
  'loopIn':(1231,426,86,59,'grey'),'loopOut':(1326,421,88,59,'grey'),'loop':(1417,416,91,68,'litgrey'),
  'layer1':(753,594,80,61,'litgrey'),'layer2':(837,591,74,51,'grey'),'layer3':(915,588,73,50,'grey'),'layer4':(992,584,73,50,'grey'),'layerAdd':(1074,580,73,50,'grey'),
  'metroOn':(1308,573,69,45,'litgrey'),
- 'mute1':(240,743,41,37,'cream'),'solo1':(290,742,40,36,'grey2'),'mute2':(367,734,48,46,'litcream'),'solo2':(417,735,43,36,'grey2'),
+ 'mute1':(240,743,41,37,'cream'),'solo1':(290,742,40,36,'grey2'),'mute2':(367,734,48,46,'litcream'),'solo2':(417,735,43,36,'grey2fix'),
  'mute3':(501,731,40,40,'cream'),'solo3':(549,728,40,36,'grey2'),'mute4':(628,724,41,36,'cream'),'solo4':(676,722,40,35,'grey2'),
 }
 P=plate.copy()
@@ -149,15 +212,24 @@ for n,r in B.items():
         warped=cv2.warpAffine(refimg,M,(src.shape[1],src.shape[0]),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
         ga=glyph_alpha(src)
         return warped*(1-ga[...,None])+inkcol*ga[...,None]
-    REF={'layer1':'layer2','loop':'loopOut','metroOn':'layer4','mute2':'mute1'}
+    REF={'layer1':'layer2','loop':'loopOut','metroOn':'layer4','mute2':'mute1','solo2':'solo1'}
     if kind=='grey': off=src; on=compose(src,pal['orange'],ink_on,smooth=True)
     elif kind=='litgrey': on=src; off=from_ref(REF[n],ink_off)
     elif kind=='cream': off=src; on=compose(src,pal['creamlit'],ink_m_on)
     elif kind=='litcream': on=src; off=from_ref(REF[n],ink_m_off)
     elif kind=='grey2': off=src; on=compose(src,pal['creamlit'],ink_m_on)
+    elif kind=='grey2fix':
+        off=from_ref(REF[n],ink('solo1')); on=compose(off,pal['creamlit'],ink_m_on)
     elif kind=='rec':
-        on=src; hsv=cv2.cvtColor(np.clip(src,0,255).astype(np.uint8),cv2.COLOR_BGR2HSV).astype(np.float32)
-        hsv[...,2]*=0.52; hsv[...,1]*=0.85; off=cv2.cvtColor(hsv.clip(0,255).astype(np.uint8),cv2.COLOR_HSV2BGR).astype(np.float32)
+        on=src
+        L=lum(src); bl=cv2.GaussianBlur(L,(0,0),5)
+        gb=np.clip((L-bl-12)/30,0,1)
+        inner=np.zeros_like(gb); h_,w_=gb.shape; inner[int(h_*0.2):int(h_*0.66),int(w_*0.15):int(w_*0.85)]=1
+        gb=cv2.GaussianBlur(gb*inner,(3,3),0)
+        rb=B['play']; refimg=clean('play'); sx_=bw/rb[2]; sy_=bh/rb[3]
+        M=np.float32([[sx_,0,4-4*sx_],[0,sy_,4-4*sy_]])
+        base=cv2.warpAffine(refimg,M,(src.shape[1],src.shape[0]),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
+        off=base*(1-gb[...,None])+np.array([38,44,196],np.float32)*gb[...,None]
     elif kind=='menu':
         off=src; L=lum(src); t=np.clip((L-90)/80,0,1)[...,None]
         on=src*(1-t)+np.array([90,190,255],np.float32)*t
