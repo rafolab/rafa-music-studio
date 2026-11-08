@@ -1,0 +1,285 @@
+import cv2, numpy as np, json
+from PIL import Image
+plate=cv2.imread('/tmp/gw/plate_step1.png').astype(np.float32)
+src=plate.copy()  # povodny stav pred upravami (pre vyrezy)
+H,W=plate.shape[:2]
+ctl={'stage':{'width':W,'height':H},'knobs':{},'faders':{},'buttons':{},'leds':{},'vu':{},'display':{}}
+def save_sprite(name,bgr,alpha):
+    rgba=np.dstack([bgr[...,::-1],alpha*255]).clip(0,255).astype(np.uint8)
+    Image.fromarray(rgba,'RGBA').save(f'/tmp/ui2/assets/{name}.webp',quality=92,method=6)
+def lum(a): return a[...,0]*0.114+a[...,1]*0.587+a[...,2]*0.299
+
+# ---------- 1. gombiky: odstranit povodne rysky, zapisat elipsy ----------
+kn=json.load(open('/tmp/gw/knobs.json'))
+kn['jog']=dict(cx=1268,cy=226,w=110,h=100)
+kn['input']=dict(cx=897.5,cy=708,w=59,h=50)
+kn['monitor']=dict(cx=1097.5,cy=697,w=59,h=55)
+kn['volume']=dict(cx=1289.5,cy=687.5,w=61,h=55)
+mask=np.zeros((H,W),np.uint8)
+for n in ('ch1','ch2','ch3','ch4','metro'):
+    k=kn[n]; cx,cy=k['cx'],k['cy']; rx=min(k['w'],k['h'])/2; ry=rx
+    x0,x1=int(cx-6),int(cx+7); y0,y1=int(cy-max(k['w'],k['h'])/2-2),int(cy-3)
+    reg=lum(plate[y0:y1,x0:x1]); m=(reg<110).astype(np.uint8)
+    mask[y0:y1,x0:x1]|=cv2.dilate(m,np.ones((3,3),np.uint8),iterations=1)
+plate=cv2.inpaint(plate.astype(np.uint8),mask*255,4,cv2.INPAINT_TELEA).astype(np.float32)
+# elipsa: pre kreslenie rysky (os X a Y), uhol zobrazenia ignorujeme (male naklonenie)
+for n,k in kn.items():
+    rx=max(k['w'],k['h'])/2 if n in('ch1','ch2','ch3','ch4','metro','tempo') else k['w']/2
+    ry=min(k['w'],k['h'])/2 if n in('ch1','ch2','ch3','ch4','metro','tempo') else k['h']/2
+    ctl['knobs'][n]={'cx':round(k['cx'],1),'cy':round(k['cy'],1),'rx':round(rx,1),'ry':round(ry,1)}
+
+# ---------- 2. fadery ----------
+F={'f1':dict(top=(255,522),bot=(280,720),marks={6:538,0:597,-12:655,-100:710},cap=(240,550,294,610),groove=574),
+   'f2':dict(top=(381.7,517),bot=(410,712),marks={6:532,0:591,-12:651,-100:704},cap=(373,610,432,672),groove=635),
+   'f3':dict(top=(505,510),bot=(537,707),marks={6:526,0:586,-12:645,-100:699},cap=(493,547,550,607),groove=570),
+   'f4':dict(top=(628,505),bot=(665,698),marks={6:520,0:580,-12:640,-100:692},cap=(630,613,688,673),groove=637)}
+orig_plate=plate.copy()
+from PIL import ImageFont, ImageDraw
+FONT=ImageFont.truetype('/tmp/fonts/Montserrat.ttf',60); FONT.set_variation_by_axes([550])
+def slotfun(f):
+    (tx,ty),(bx,by)=f['top'],f['bot']; sl=(bx-tx)/(by-ty); return (lambda y: tx+(y-ty)*sl), sl
+def draw_text_alpha(text,cap):
+    img=Image.new('L',(400,120),0); d=ImageDraw.Draw(img); d.text((10,10),text,font=FONT,fill=255)
+    img=img.crop(img.getbbox()); hb=FONT.getbbox('0'); s_=cap/(hb[3]-hb[1])
+    return np.asarray(img.resize((max(1,int(img.width*s_)),max(1,int(img.height*s_))),Image.LANCZOS)).astype(np.float32)/255
+def stamp(img,alpha,x,y,color):
+    h,w=alpha.shape; x=int(round(x)); y=int(round(y))
+    img[y:y+h,x:x+w]=img[y:y+h,x:x+w]*(1-alpha[...,None])+np.array(color,np.float32)*alpha[...,None]
+def hline(img,y,xa,xb,color,th=1.6):
+    # vodorovna ryzka s antialiasingom
+    for yy in range(int(np.floor(y-th)),int(np.ceil(y+th))+1):
+        a_=np.clip(th/2+0.5-abs(yy-y),0,1)
+        if a_<=0: continue
+        xs=np.arange(int(np.floor(xa)),int(np.ceil(xb))+1)
+        ax=np.clip(np.minimum(xs-xa+1,xb-xs+1),0,1)*a_
+        img[yy,xs]=img[yy,xs]*(1-ax[:,None])+np.array(color,np.float32)*ax[:,None]
+# spolocne parametre z cistych miest povodneho obrazka
+prof=[]
+for n,f in F.items():
+    slotx,_=slotfun(f); x0,y0,x1,y1=f['cap']; (tx,ty),(bx,by)=f['top'],f['bot']
+    for y in range(int(ty+20),int(by-20)):
+        if y0-35<=y<=y1+45: continue
+        cx=slotx(y); xs=np.arange(-12,13)
+        row=np.array([orig_plate[y,int(np.floor(cx+d))]*(1-((cx+d)%1))+orig_plate[y,int(np.floor(cx+d))+1]*((cx+d)%1) for d in xs])
+        prof.append(row)
+prof=np.median(np.array(prof),0)            # priečny rez drážkou (25 bodov)
+tickcol=np.array([205,208,212],np.float32)  # farba ryziek (BGR)
+labcol=np.array([214,216,220],np.float32)
+DIV=[(182,210),(312,342),(438,473),(563,602),(695,740)]
+divx=lambda i,y: DIV[i][0]+(DIV[i][1]-DIV[i][0])*(y-500)/220
+for n,f in F.items():
+    slotx,slant=slotfun(f); (tx,ty),(bx,by)=f['top'],f['bot']; x0,y0,x1,y1=f['cap']
+    Y0,Y1=int(ty-16),int(by+16)
+    fi=int(n[1])-1
+    XL=lambda y: int(round(divx(fi,y)+4)); XR=lambda y: int(round(divx(fi+1,y)-3))
+    # 1) podklad panelu: hladky priebeh farby z cisteho stlpca vpravo od ryziek
+    ys=[];cs=[]
+    for y in range(Y0,Y1):
+        if y0-35<=y<=y1+50: continue
+        xr=XR(y)-12; ys.append(y); cs.append(np.median(orig_plate[y,xr:xr+8].reshape(-1,3),0))
+    ys=np.array(ys); cs=np.array(cs)
+    coef=[np.polyfit(ys,cs[:,k],2) for k in range(3)]
+    rng=np.random.default_rng(int(n[1]))
+    for y in range(Y0,Y1):
+        xl=XL(y); xr=XR(y)
+        base=np.array([np.polyval(coef[k],y) for k in range(3)],np.float32)
+        plate[y,xl:xr]=base+rng.normal(0,1.1,(xr-xl,1)).astype(np.float32)
+    # mäkký prechod na okrajoch oblasti do povodneho
+    # 2) drážka (kapsula) podla priecneho rezu
+    R_=7.0
+    for y in range(Y0,Y1):
+        cx=slotx(y)
+        dt=min(y-(ty-6), (by+6)-y)
+        if dt<0: continue
+        k_=1.0 if dt>=R_ else np.sqrt(max(0,1-((R_-dt)/R_)**2))
+        xs_=np.arange(int(np.floor(cx-14)),int(np.ceil(cx+15)))
+        dd=(xs_-cx)/max(k_,1e-3)
+        col=np.stack([np.interp(dd,np.arange(-12,13),prof[:,c_]) for c_ in range(3)],1)
+        w_=np.clip(12.5-np.abs(dd),0,1)*(1.0 if k_>0.05 else 0)
+        plate[y,xs_]=plate[y,xs_]*(1-w_[:,None])+col*w_[:,None]
+    # 3) ryzky: 4 dieliky medzi znackami; vlavo kratke (pri znackach dlhsie), vpravo dlhe
+    mk=[f['marks'][6],f['marks'][0],f['marks'][-12],f['marks'][-100]]
+    ticks=[]
+    for i in range(3):
+        for j in range(4): ticks.append((mk[i]+(mk[i+1]-mk[i])*j/4, j==0))
+    ticks.append((mk[3],True))
+    for (y,major) in ticks:
+        cx=slotx(y)
+        hline(plate,y+1,cx-(25 if major else 21),cx-11,tickcol,1.5)
+        hline(plate,y-2,cx+12,cx+(31 if major else 28),tickcol,1.5)
+    # 4) napisy +6, 0, -12, -∞ (zarovnane vpravo pred ryzkou)
+    for txt,y in (('+6',mk[0]),('0',mk[1]),('-12',mk[2]),('-∞',mk[3])):
+        al=draw_text_alpha(txt.replace('-','−'),9.5)
+        stamp(plate,al,slotx(y)-30-al.shape[1],y-al.shape[0]/2+0.5,labcol)
+    # mäkké okraje oblasti
+for n,f in F.items():
+    slotx,_=slotfun(f); (tx,ty),(bx,by)=f['top'],f['bot']
+    Y0,Y1=int(ty-16),int(by+16)
+    fi=int(n[1])-1
+    XL=lambda y: int(round(divx(fi,y)+4)); XR=lambda y: int(round(divx(fi+1,y)-3))
+    for y in list(range(Y0,Y0+4))+list(range(Y1-4,Y1)):
+        w_=(min(y-Y0,Y1-1-y)+0.5)/4
+        xl=XL(y); xr=XR(y)
+        plate[y,xl:xr]=orig_plate[y,xl:xr]*(1-w_)+plate[y,xl:xr]*w_
+    for y in range(Y0,Y1):
+        xl=XL(y); xr=XR(y)
+        for k in range(2):
+            w_=(k+0.5)/2
+            plate[y,xl+k]=orig_plate[y,xl+k]*(1-w_)+plate[y,xl+k]*w_
+            plate[y,xr-1-k]=orig_plate[y,xr-1-k]*(1-w_)+plate[y,xr-1-k]*w_
+# 5) sprity hlaviciek: plna hlavicka + mäkký tien (len tmavsie miesta, vyhladene)
+for n,f in F.items():
+    slotx,slant=slotfun(f); x0,y0,x1,y1=f['cap']
+    S=(x0-8,y0-10,x1+12,y1+20)
+    o=orig_plate[S[1]:S[3],S[0]:S[2]]; r=plate[S[1]:S[3],S[0]:S[2]]
+    inner=np.zeros(o.shape[:2],np.float32); inner[(y0-S[1])+1:(y1-S[1]),(x0-S[0])+1:(x1-S[0])-1]=1
+    edge=cv2.dilate(inner,np.ones((5,5),np.uint8))
+    d=np.abs(o-r).max(2); al_edge=np.clip((d-14)/30,0,1)*edge
+    dark=np.clip((lum(r)-lum(o)),0,None); dark=cv2.GaussianBlur(dark,(0,0),3)
+    shadow=np.clip(dark/max(1,lum(r).mean()),0,0.85)
+    ring=cv2.GaussianBlur(cv2.dilate(inner,np.ones((21,21),np.uint8)),(0,0),3)
+    al=np.maximum(np.maximum(inner,al_edge),shadow*ring)
+    col=np.where(inner[...,None]>0.5,o,o*0+np.where((al_edge>0)[...,None],o,0))
+    save_sprite(f'fader_{n}',np.where((inner+al_edge)[...,None]>0,o,np.zeros_like(o)),al)
+    ctl['faders'][n]={'sprite':f'assets/fader_{n}.webp','x':S[0],'y':S[1],'w':S[2]-S[0],'h':S[3]-S[1],
+        'grooveY':f['groove'],'slant':round(slant,4),'marks':{str(k):v for k,v in f['marks'].items()},
+        'track':int(n[1])-1}
+cv2.imwrite('/tmp/gw/plate_nofaders.png',plate.astype(np.uint8))
+json.dump(ctl,open('/tmp/gw/ctl_partial.json','w'),indent=1)
+
+# ---------- 3. tlacidla ----------
+B={ # id: (x,y,w,h) z detekcie, typ
+ 'project':(1330,148,113,41,'menu'),'tracks':(1336,196,115,41,'menu'),'effects':(1342,245,117,42,'menu'),'settings':(1348,292,119,38,'menu'),
+ 'rewind':(730,446,102,66,'grey'),'stop':(840,441,101,65,'grey'),'play':(950,436,103,65,'grey'),'rec':(1061,430,117,72,'rec'),
+ 'loopIn':(1231,426,86,59,'grey'),'loopOut':(1326,421,88,59,'grey'),'loop':(1417,416,91,68,'litgrey'),
+ 'layer1':(753,594,80,61,'litgrey'),'layer2':(837,591,74,51,'grey'),'layer3':(915,588,73,50,'grey'),'layer4':(992,584,73,50,'grey'),'layerAdd':(1074,580,73,50,'grey'),
+ 'metroOn':(1308,573,69,45,'litgrey'),
+ 'mute1':(240,743,41,37,'cream'),'solo1':(290,742,40,36,'grey2'),'mute2':(367,734,48,46,'litcream'),'solo2':(417,735,43,36,'grey2fix'),
+ 'mute3':(501,731,40,40,'cream'),'solo3':(549,728,40,36,'grey2'),'mute4':(628,724,41,36,'cream'),'solo4':(676,722,40,35,'grey2'),
+}
+P=plate.copy()
+def crop(r,pad=(4,4,5,10)):
+    x,y,w,h=r[:4]; return (x-pad[0],y-pad[1],x+w+pad[2],y+h+pad[3])
+def pix(name):
+    x0,y0,x1,y1=crop(B[name],(0,0,0,0)); return P[y0:y1,x0:x1].reshape(-1,3)
+def remap(src,refpix):
+    L=lum(src); Lr=lum(refpix)
+    order=np.argsort(Lr); refs=refpix[order]; Lrs=Lr[order]
+    # kvantilove mapovanie jasu zdroja na jas referencie
+    q=(np.argsort(np.argsort(L.ravel()))/(L.size-1))
+    idx=np.clip((q*(len(refs)-1)).astype(int),0,len(refs)-1)
+    # vyhladit farby referencie podla jasu
+    k=max(3,len(refs)//60); sm=np.array([refs[max(0,i-k):i+k].mean(0) for i in range(len(refs))])
+    return sm[idx].reshape(src.shape)
+def glyph_alpha(src):
+    L=lum(src); bl=cv2.GaussianBlur(L,(0,0),5)
+    ga=np.clip((bl-L-14)/30,0,1)
+    inner=np.zeros_like(ga); h,w=ga.shape; inner[int(h*0.18):int(h*0.78),int(w*0.18):int(w*0.85)]=1
+    return cv2.GaussianBlur(ga*inner,(3,3),0)
+def erase(src,ga):
+    m=(cv2.dilate((ga>0.15).astype(np.uint8),np.ones((3,3),np.uint8),iterations=2)*255)
+    return cv2.inpaint(np.clip(src,0,255).astype(np.uint8),m,4,cv2.INPAINT_TELEA).astype(np.float32)
+def region(name):
+    x0,y0,x1,y1=crop(B[name]); return P[y0:y1,x0:x1].copy()
+def clean(name):
+    s_=region(name); return erase(s_,glyph_alpha(s_))
+def core(img):  # len vnutro tlacidla pre paletu
+    h,w=img.shape[:2]; return img[6:h-12,6:w-6].reshape(-1,3)
+pal={'orange':core(clean('layer1')),'grey':core(clean('layer2')),'greyOut':core(clean('loopOut')),'cream':core(clean('mute1')),'creamlit':core(clean('mute2'))}
+def ink(name):
+    s_=region(name); ga=glyph_alpha(s_); return s_[ga>0.7].mean(0)
+ink_off=ink('layer2'); ink_on=ink('layer1'); ink_m_off=ink('mute1'); ink_m_on=ink('mute2')
+def compose(src,palette,inkcol,strength=1.0,flatten=False,smooth=False):
+    ga=glyph_alpha(src); base=erase(src,ga)
+    if flatten:
+        h,w=base.shape[:2]; core_=np.zeros((h,w),np.float32); core_[6:h-12,6:w-6]=1
+        Lb=lum(base); low=cv2.GaussianBlur(Lb,(0,0),9); edge=cv2.GaussianBlur(core_,(0,0),3)
+        target=np.median(Lb[core_>0])
+        base=base*(1+edge*(target/np.maximum(low,1)-1))[...,None]
+    if smooth: base=cv2.bilateralFilter(np.clip(base,0,255).astype(np.uint8),7,40,7).astype(np.float32)
+    col=remap(base,palette)
+    return col*(1-ga[...,None]*strength)+inkcol*ga[...,None]*strength
+off_imgs={}; on_imgs={}
+for n,r in B.items():
+    x0,y0,x1,y1=crop(r); src=P[y0:y1,x0:x1].copy(); kind=r[4]
+    bx,by,bw,bh=r[:4]
+    m=np.zeros(src.shape[:2],np.float32); m[4-1:4+bh+7,4-1:4+bw+2]=1; m=cv2.GaussianBlur(m,(3,3),0)
+    def from_ref(refname,inkcol):
+        rb=B[refname]; rx0,ry0,rx1,ry1=crop(rb); refimg=clean(refname)
+        # mapovanie tela referencie na telo cieľa (posun + mierka)
+        sx_=bw/rb[2]; sy_=bh/rb[3]
+        M=np.float32([[sx_,0,4-4*sx_],[0,sy_,4-4*sy_]])
+        warped=cv2.warpAffine(refimg,M,(src.shape[1],src.shape[0]),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
+        ga=glyph_alpha(src)
+        return warped*(1-ga[...,None])+inkcol*ga[...,None]
+    REF={'layer1':'layer2','loop':'loopOut','metroOn':'layer4','mute2':'mute1','solo2':'solo1'}
+    if kind=='grey': off=src; on=compose(src,pal['orange'],ink_on,smooth=True)
+    elif kind=='litgrey': on=src; off=from_ref(REF[n],ink_off)
+    elif kind=='cream': off=src; on=compose(src,pal['creamlit'],ink_m_on)
+    elif kind=='litcream': on=src; off=from_ref(REF[n],ink_m_off)
+    elif kind=='grey2': off=src; on=compose(src,pal['creamlit'],ink_m_on)
+    elif kind=='grey2fix':
+        off=from_ref(REF[n],ink('solo1')); on=compose(off,pal['creamlit'],ink_m_on)
+    elif kind=='rec':
+        on=src
+        L=lum(src); bl=cv2.GaussianBlur(L,(0,0),5)
+        gb=np.clip((L-bl-12)/30,0,1)
+        inner=np.zeros_like(gb); h_,w_=gb.shape; inner[int(h_*0.2):int(h_*0.66),int(w_*0.15):int(w_*0.85)]=1
+        gb=cv2.GaussianBlur(gb*inner,(3,3),0)
+        rb=B['play']; refimg=clean('play'); sx_=bw/rb[2]; sy_=bh/rb[3]
+        M=np.float32([[sx_,0,4-4*sx_],[0,sy_,4-4*sy_]])
+        base=cv2.warpAffine(refimg,M,(src.shape[1],src.shape[0]),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
+        off=base*(1-gb[...,None])+np.array([38,44,196],np.float32)*gb[...,None]
+    elif kind=='menu':
+        off=src; L=lum(src); t=np.clip((L-90)/80,0,1)[...,None]
+        on=src*(1-t)+np.array([90,190,255],np.float32)*t
+    off=np.where(m[...,None]>0,off,src); on=np.where(m[...,None]>0,on,src)
+    plate[y0:y1,x0:x1]=src*(1-m[...,None])+off*m[...,None]
+    save_sprite(f'btn_{n}_off',off,m); save_sprite(f'btn_{n}_on',on,m)
+    ctl['buttons'][n]={'x':x0,'y':y0,'w':x1-x0,'h':y1-y0,'off':f'assets/btn_{n}_off.webp','on':f'assets/btn_{n}_on.webp','kind':kind}
+
+# svatozar okolo povodne svietiacich tlacidiel: ubrat oranzovy presah
+for n in ('layer1','mute2','loop','metroOn'):
+    x0,y0,x1,y1=crop(B[n]); R=34
+    X0,Y0,X1,Y1=x0-R,y0-R,x1+R,y1+R
+    blk=plate[Y0:Y1,X0:X1]; ring=np.ones(blk.shape[:2],np.float32)
+    bx,by,bw,bh=B[n][:4]; ring[by-1-Y0:by+bh+7-Y0, bx-1-X0:bx+bw+2-X0]=0
+    # vzdialenost od tlacidla
+    d=cv2.distanceTransform((ring>0).astype(np.uint8),cv2.DIST_L2,3)
+    w=np.clip(1-d/R,0,1)*ring
+    base=cv2.GaussianBlur(blk,(0,0),12)
+    far=(d>R*0.75)&(ring>0)
+    base_c=np.median(blk[far].reshape(-1,3),0)
+    lowb=cv2.GaussianBlur(blk,(0,0),6); lowf=lowb.copy()
+    # nizkofrekvencny presah nad zakladnu farbu panelu odobrat (detaily ostanu)
+    excess=np.clip(lowb-base_c,0,None)
+    corr=blk-excess*np.clip(w[...,None]*1.6,0,1)
+    plate[Y0:Y1,X0:X1]=np.where(ring[...,None]>0,corr,blk)
+
+# ---------- 4. LED ----------
+for n,(x0,y0,x1,y1) in {'metro':(1188,567,1216,587),'effects':(1361,249,1378,266)}.items():
+    X0,Y0,X1,Y1=x0-8,y0-8,x1+8,y1+8
+    src=plate[Y0:Y1,X0:X1].copy()
+    m=np.zeros(src.shape[:2],np.float32); m[8:-8,8:-8]=1; m=cv2.GaussianBlur(m,(5,5),0)
+    on=src.copy()
+    L_=lum(src)[...,None]; off=src*0.15+L_*np.array([0.10,0.16,0.26],np.float32)
+    plate[Y0:Y1,X0:X1]=src*(1-m[...,None])+off*m[...,None]
+    glow=np.zeros(src.shape[:2],np.float32); glow[4:-4,4:-4]=1; glow=cv2.GaussianBlur(glow,(9,9),0)
+    save_sprite(f'led_{n}_on',on,np.maximum(m,glow*0.0))
+    ctl['leds'][n]={'x':X0,'y':Y0,'w':X1-X0,'h':Y1-Y0,'on':f'assets/led_{n}_on.webp'}
+
+# ---------- 5. VU ----------
+ctl['vu']={'L':{'pivot':[279,362],'face':[178,197,388,323],'dome':[238,298,300,326]},
+           'R':{'pivot':[511,352],'face':[410,190,620,318],'dome':[470,288,532,316]},
+           'scaleDb':[-20,-10,-7,-5,-3,-1,0,1,2,3],'scaleX':[215,232,245,256,272,296,308,322,335,347],'length':117}
+for side in ('L','R'):
+    x0,y0,x1,y1=ctl['vu'][side]['dome']; src=plate[y0:y1,x0:x1]
+    m=np.zeros(src.shape[:2],np.float32); g=lum(src)
+    m=(g<70).astype(np.float32); m=cv2.morphologyEx(m,cv2.MORPH_OPEN,np.ones((3,3),np.uint8)); m=cv2.GaussianBlur(m,(3,3),0)
+    save_sprite(f'vu_dome_{side}',src,m)
+# ---------- 6. displej ----------
+ctl['display']={'quad':[[662.7,159.5],[1134.2,140.6],[1162.1,358.2],[689.8,379.5]]}
+cv2.imwrite('/tmp/gw/plate_final.png',np.clip(plate,0,255).astype(np.uint8))
+Image.open('/tmp/gw/plate_final.png').save('/tmp/ui2/assets/panel.webp',quality=90,method=6)
+json.dump(ctl,open('/tmp/ui2/controls.json','w'),indent=1)
+print('ok',len(ctl['buttons']))

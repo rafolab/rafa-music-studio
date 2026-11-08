@@ -26,7 +26,7 @@ Program je natívna Windows aplikácia. Obrazovka je HTML zobrazené vo vstavano
 
 | Časť | Vlastník | Ostatní |
 | --- | --- | --- |
-| `ui/index.html`, `ui/styles.css`, `ui/app.js`, `ui/assets/` | **ChatGPT** (dizajn a obrazovka) | môžu len čítať a pripomienkovať |
+| `ui/index.html`, `ui/console.css`, `ui/console.js`, `ui/controls.js`, `ui/assets/`, `ui/fonts/` | **Claude** (konzola Model 5, od kroku 2A) | ChatGPT kontroluje vzhľad, ergonómiu a slovenské texty menu |
 | `Source/`, `CMakeLists.txt`, `.github/` | **Claude** (zvuk, motor, zostavenie) | môžu len čítať a pripomienkovať |
 | `ui/rafa-bridge.js` | **Claude** | ChatGPT ho používa, nemení |
 | `ui/API.md` (zmluva medzi UI a motorom) | **spoločná** | mení sa len po dohode cez Rafa |
@@ -74,6 +74,7 @@ Program je natívna Windows aplikácia. Obrazovka je HTML zobrazené vo vstavano
 | 1c | Obrazovka LOOP DECK Model 5 v HTML (ChatGPT) | **otestované na Windows – funguje** |
 | 2 | Tempo, metronóm, slučka (LOOP): `API.md` v2 + motor + simulácia (Claude) | hotové, overené v simulovanom zvukovom prostredí |
 | 3 | Mix vrstiev: `API.md` v3 + motor + simulácia (Claude) | hotové, overené so skutočným motorom (JACK dummy) |
-| 3c | Oživenie fádrov, gombíkov PAN, tlačidiel S a hlavnej hlasitosti na paneli podľa `API.md` v3 (ChatGPT) | na rade |
+| 3c | ~~Oživenie fádrov… (ChatGPT)~~ – nahradené novou konzolou Model 5 | zrušené |
+| 2A–2C | Konzola Model 5: čistý panel, 44 samostatných prvkov (`ui/assets`, `ui/controls.js`, `ui/console.js`), API v4, motor. Robí Claude, ChatGPT kontroluje vzhľad a ergonómiu. Nástroje na výrobu grafiky: `tools/model5/` | hotové, čaká na test na Windows |
 | – | MIDI (klávesy Akai) | odložené – Windows klávesy zatiaľ nevidí (problém s USB pripojením) |
 | 2c | Oživenie ovládačov LOOP, METRONÓM, TEMPO v HTML podľa `API.md` v2 | hotové – **jednorazová výnimka: zapracoval Claude** (ZIP od ChatGPT sa nedal stiahnuť); kontrolu UI robí ChatGPT |

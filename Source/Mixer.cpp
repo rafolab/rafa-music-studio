@@ -82,7 +82,7 @@ void MainComponent::setTrackVolumeDb (const juce::String& trackId, double db)
         if (auto* vol = t->getVolumePlugin())
         {
             vol->setVolumeDb (clampDb (db));
-            saveEdit();
+            requestSave();
         }
 }
 
@@ -92,7 +92,7 @@ void MainComponent::setTrackPan (const juce::String& trackId, double pan)
         if (auto* vol = t->getVolumePlugin())
         {
             vol->setPan ((float) juce::jlimit (-1.0, 1.0, pan));
-            saveEdit();
+            requestSave();
         }
 }
 
@@ -101,7 +101,7 @@ void MainComponent::setTrackSolo (const juce::String& trackId, bool solo)
     if (auto* t = findTrackById (trackId))
     {
         t->setSolo (solo);
-        saveEdit();
+        requestSave();
     }
 }
 
@@ -113,7 +113,7 @@ void MainComponent::setMasterVolumeDb (double db)
     if (auto vol = edit->getMasterVolumePlugin())
     {
         vol->setVolumeDb (clampDb (db));
-        saveEdit();
+        requestSave();
     }
 }
 
@@ -145,6 +145,9 @@ juce::var MainComponent::buildMixerState()
     }
 
     obj->setProperty ("masterLevelDb", juce::roundToInt (masterLevel * 10.0f) / 10.0);
+    // API v4: skutocny vystup zvukovej karty, zvlast L a R (VU metre)
+    obj->setProperty ("masterLevelL", juce::roundToInt (outLevelL * 10.0f) / 10.0);
+    obj->setProperty ("masterLevelR", juce::roundToInt (outLevelR * 10.0f) / 10.0);
     obj->setProperty ("trackLevels", levels);
     return juce::var (obj.release());
 }

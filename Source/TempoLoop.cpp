@@ -68,7 +68,7 @@ void MainComponent::setTempoBpm (double bpm)
     ts.getTempo (0)->setBpm (bpm);
     tr.setLoopRange (ts.toTime (loopBeats));
 
-    saveEdit();
+    requestSave();
 }
 
 void MainComponent::setTimeSignature (int numerator, int denominator)
@@ -80,7 +80,7 @@ void MainComponent::setTimeSignature (int numerator, int denominator)
     denominator = (denominator == 8) ? 8 : 4;
 
     edit->tempoSequence.getTimeSig (0)->setStringTimeSig (juce::String (numerator) + "/" + juce::String (denominator));
-    saveEdit();
+    requestSave();
 }
 
 void MainComponent::setMetronome (bool on)
@@ -89,7 +89,7 @@ void MainComponent::setMetronome (bool on)
         return;
 
     edit->clickTrackEnabled = on;
-    saveEdit();
+    requestSave();
 }
 
 void MainComponent::setMetronomeVolume (double volume)
@@ -99,7 +99,7 @@ void MainComponent::setMetronomeVolume (double volume)
 
     // Tracktion pripusta 0.2 - 1.0; hodnoty z UI 0 - 1 premapujeme
     edit->setClickTrackVolume ((float) (0.2 + 0.8 * juce::jlimit (0.0, 1.0, volume)));
-    saveEdit();
+    requestSave();
 }
 
 void MainComponent::setCountInBars (int bars)
@@ -110,7 +110,7 @@ void MainComponent::setCountInBars (int bars)
     edit->setCountInMode (bars >= 2 ? te::Edit::CountIn::twoBar
                         : bars == 1 ? te::Edit::CountIn::oneBar
                                     : te::Edit::CountIn::none);
-    saveEdit();
+    requestSave();
 }
 
 //==============================================================================
@@ -131,7 +131,7 @@ void MainComponent::setLoopOn (bool on)
             tr.setPosition (range.getStart());
     }
 
-    saveEdit();
+    requestSave();
 }
 
 void MainComponent::setLoopRangeSeconds (double start, double end)
@@ -148,7 +148,7 @@ void MainComponent::setLoopRangeSeconds (double start, double end)
     }
 
     edit->getTransport().setLoopRange ({ te::TimePosition::fromSeconds (start), te::TimePosition::fromSeconds (end) });
-    saveEdit();
+    requestSave();
 }
 
 void MainComponent::setLoopBars (int bars)

@@ -153,6 +153,8 @@ MainComponent::MainComponent (te::Engine& e)
     monitorToggle.setButtonText (sk ("Počúvať vstup cez počítač"));
     monitorToggle.setTooltip (sk ("Vypni, ak počuješ gitaru priamo z komba – inak bude zvuk zdvojený."));
     monitorToggle.setToggleState (settings->getBoolValue ("monitoring", false), juce::dontSendNotification);
+    inputGainDb = (float) juce::jlimit (-24.0, 24.0, settings->getDoubleValue ("inputGainDb", 0.0));
+    applyInputGain();
     monitorToggle.onClick = [this]
     {
         settings->setValue ("monitoring", monitorToggle.getToggleState());
@@ -232,6 +234,7 @@ MainComponent::~MainComponent()
     webView = nullptr;
     engine.getDeviceManager().removeChangeListener (this);
     detachMeter();
+    detachOutputMeter();
     closeEdit();
     setLookAndFeel (nullptr);
 }
@@ -417,6 +420,7 @@ void MainComponent::loadEdit (const juce::File& file)
 
     initTempoDefaults();
     applyMonitoring();
+    selectedTrackId = edit->state.getProperty ("rafaSelectedTrack").toString();
     trackList.setEdit (edit.get());
     resized();
 
@@ -430,6 +434,7 @@ void MainComponent::loadEdit (const juce::File& file)
 
 void MainComponent::saveEdit()
 {
+    saveDueMs = 0;
     if (edit != nullptr)
         te::EditFileOperations (*edit).save (false, true, false);
 }
@@ -663,11 +668,14 @@ te::AudioTrack* MainComponent::prepareTrackForRecording()
         return nullptr;
     }
 
-    // Pouzijeme poslednu prazdnu stopu, inak pridame novu
+    // Pouzijeme vybranu prazdnu vrstvu, inak poslednu prazdnu, inak pridame novu
     auto tracks = te::getAudioTracks (*edit);
     te::AudioTrack* target = nullptr;
 
-    if (! tracks.isEmpty() && tracks.getLast()->getClips().isEmpty())
+    if (auto* sel = findTrackById (getSelectedTrackId()); sel != nullptr && sel->getClips().isEmpty())
+        target = sel;
+
+    if (target == nullptr && ! tracks.isEmpty() && tracks.getLast()->getClips().isEmpty())
         target = tracks.getLast();
 
     if (target == nullptr)
@@ -679,7 +687,11 @@ te::AudioTrack* MainComponent::prepareTrackForRecording()
     if (target == nullptr)
         return nullptr;
 
-    target->setName (sk ("Gitara ") + juce::String (te::getAudioTracks (*edit).indexOf (target) + 1));
+    // predvolene meno prepiseme, vlastne meno od pouzivatela nechame
+    if (target->getName().isEmpty() || target->getName().startsWith (sk ("Stopa ")) || target->getName().startsWith ("Track "))
+        target->setName (sk ("Gitara ") + juce::String (te::getAudioTracks (*edit).indexOf (target) + 1));
+
+    selectTrack (target->itemID.toString());
 
     edit->getTransport().ensureContextAllocated();
 
@@ -763,6 +775,7 @@ void MainComponent::startRecording()
     recordingTrackID = currentRecordingTrack->itemID;
     clipsBeforeRecording = currentRecordingTrack->getClips().size();
     pendingRecordingCheck = false;
+    recordingStartedMs = juce::Time::getMillisecondCounter();
 
     trackList.refreshIfChanged();
     trackList.setRecordingTrack (currentRecordingTrack);
@@ -1001,6 +1014,28 @@ void MainComponent::timerCallback()
 
     checkLoopRecordingPass();
     syncTrackMeters();
+    syncOutputMeter();
+
+    if (saveDueMs != 0 && juce::Time::getMillisecondCounter() >= saveDueMs
+         && edit != nullptr && ! edit->getTransport().isRecording())
+    {
+        saveDueMs = 0;
+        saveEdit();
+    }
+
+    // nahravanie sa zastavilo samo (napr. zvukove zariadenie sa pri starte prave pripajalo)
+    if (edit != nullptr && currentRecordingTrack != nullptr && ! pendingRecordingCheck
+         && ! edit->getTransport().isRecording()
+         && juce::Time::getMillisecondCounter() > recordingStartedMs + 1500)
+    {
+        juce::Logger::writeToLog ("Nahravanie sa prerusilo bez STOP");
+        edit->getTransport().stop (false, false);
+        loopRecordPass = false;
+        trackList.setRecordingTrack (nullptr);
+        currentRecordingTrack = nullptr;
+        updateTransportButtons();
+        setStatus (sk ("Nahrávanie sa prerušilo – zvukové zariadenie sa práve pripájalo. Stlač REC znova."), RafaColours::accent);
+    }
 
     if (pendingRecordingCheck)
         checkFinishedRecording();
@@ -1048,8 +1083,10 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
         // zmenilo sa zvukove zariadenie (napr. pripojene kombo alebo zmena v nastaveniach)
         rememberOrRestorePreferredInput (true);
         detachMeter();
+        detachOutputMeter();
         ensureMonoInputs();
         applyMonitoring();
+        applyInputGain();
         refreshInputList();
         attachMeterToSelectedInput();
         updateDeviceInfo();

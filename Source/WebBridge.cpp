@@ -11,7 +11,7 @@
 #include "Diagnostics.h"
 #include "RafaUIData.h"
 
-static constexpr int rafaApiVersion = 3;
+static constexpr int rafaApiVersion = 4;
 
 //==============================================================================
 static const char* findUIResource (const juce::String& fileName, int& size)
@@ -39,6 +39,8 @@ static juce::String mimeTypeFor (const juce::String& fileName)
     if (ext == "gif")                  return "image/gif";
     if (ext == "webp")                 return "image/webp";
     if (ext == "ico")                  return "image/x-icon";
+    if (ext == "woff2")                return "font/woff2";
+    if (ext == "woff")                 return "font/woff";
     if (ext == "woff")                 return "font/woff";
     if (ext == "woff2")                return "font/woff2";
     if (ext == "ttf")                  return "font/ttf";
@@ -222,6 +224,23 @@ void MainComponent::handleWebCommand (const juce::var& message)
     else if (command == "trackPan")           setTrackPan (args.getProperty ("trackId", {}).toString(), (double) args.getProperty ("pan", 0.0));
     else if (command == "trackSolo")          setTrackSolo (args.getProperty ("trackId", {}).toString(), (bool) args.getProperty ("solo", false));
     else if (command == "masterVolume")       setMasterVolumeDb ((double) args.getProperty ("db", 0.0));
+    // --- API v4: konzola Model 5 ---
+    else if (command == "selectTrack")        selectTrack (args.getProperty ("trackId", {}).toString());
+    else if (command == "trackAdd")           addEmptyTrack();
+    else if (command == "setInputGain")
+    {
+        inputGainDb = (float) juce::jlimit (-24.0, 24.0, (double) args.getProperty ("db", 0.0));
+        settings->setValue ("inputGainDb", inputGainDb);
+        applyInputGain();
+    }
+    else if (command == "saveSong")
+    {
+        if (! edit->getTransport().isRecording())
+        {
+            saveEdit();
+            setStatus (sk ("Skladba uložená."), RafaColours::play);
+        }
+    }
     else
     {
         DBG ("Neznamy prikaz z UI: " << command);
@@ -329,6 +348,8 @@ juce::var MainComponent::buildStateObject()
             obj->setProperty (p.name, p.value);
 
     obj->setProperty ("mixer", buildMixerState());
+    obj->setProperty ("selectedTrackId", getSelectedTrackId());
+    obj->setProperty ("inputGainDb", juce::roundToInt (inputGainDb * 10.0f) / 10.0);
 
     auto busy = std::make_unique<juce::DynamicObject>();
     busy->setProperty ("diagnosticsAllowed", ! playing && ! recording);

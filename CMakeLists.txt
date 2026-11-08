@@ -68,6 +68,7 @@ target_sources (${TARGET_NAME} PRIVATE
     Source/WebBridge.cpp
     Source/TempoLoop.cpp
     Source/Mixer.cpp
+    Source/Console.cpp
     Source/RafaLookAndFeel.h
     Source/Texts.h)
 

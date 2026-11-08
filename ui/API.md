@@ -1,6 +1,6 @@
 # RAFA MUSIC STUDIO – API medzi obrazovkou (HTML) a motorom (C++)
 
-**Verzia API: 3**  ·  vlastník mosta: Claude  ·  zmeny len po dohode (pozri `KOORDINACIA.md`)
+**Verzia API: 4**  ·  vlastník mosta: Claude  ·  zmeny len po dohode (pozri `KOORDINACIA.md`)
 
 Obrazovka používa iba dve funkcie z `ui/rafa-bridge.js`:
 
@@ -10,7 +10,7 @@ Rafa.send("selectInput", { id: "in-1" });   // príkaz s parametrami
 Rafa.on("state",  s => { ... });            // pravidelný stav (cca 20× za sekundu)
 Rafa.on("tracks", t => { ... });            // zoznam stôp (len keď sa zmení)
 Rafa.isSimulation                           // true = otvorené v prehliadači bez programu
-Rafa.apiVersion                             // 3
+Rafa.apiVersion                             // 4
 ```
 
 `rafa-bridge.js` načítaj ako prvý skript: `<script src="rafa-bridge.js"></script>`.
@@ -56,6 +56,19 @@ Klávesové skratky rieši UI a posiela príkazy: **R** → `record`, **medzern�
 | `setLoopRange` | `{ start: s, end: s }` | Presný rozsah slučky v sekundách. |
 | `loopIn` | – | LOOP IN = aktuálna pozícia prehrávacej hlavy, zarovnaná na najbližšiu dobu. Ak by bol za LOOP OUT, slučka si zachová dĺžku. |
 | `loopOut` | – | LOOP OUT = aktuálna pozícia, zarovnaná na najbližšiu dobu. Musí byť za LOOP IN, inak sa ignoruje a v `status` príde upozornenie. |
+
+### Príkazy pridané v API 4 – konzola Model 5
+
+| Príkaz | Parametre | Čo spraví |
+| --- | --- | --- |
+| `selectTrack` | `{ trackId: string }` | Vyberie aktívnu vrstvu (tlačidlá 1–4, DATA). Ukladá sa do skladby. REC nahráva do vybranej vrstvy, ak je prázdna. |
+| `trackAdd` | – | Pridá prázdnu vrstvu „Stopa N“ a vyberie ju. Počas nahrávania nič nespraví. |
+| `setInputGain` | `{ db: −24…+24 }` | Citlivosť vstupu gitary (gombík INPUT). Platí pre nahrávanie aj merač vstupu. Pamätá sa v nastaveniach programu. |
+| `saveSong` | – | Okamžite uloží skladbu (inak sa ukladá automaticky). |
+
+MONITOR na konzole používa existujúci príkaz `setMonitoring` (zapnutý / vypnutý). Plynulú hlasitosť odposluchu motor Tracktion nemá; hlasitosť gitary sa reguluje na kombe.
+
+Zmeny mixu, tempa a metronómu sa ukladajú s oneskorením 0,8 s (ťahanie faderom nepíše súbor 20× za sekundu). Pri zatvorení skladby sa uloží vždy.
 
 ### Príkazy pridané v API 3 – mix vrstiev
 
@@ -115,8 +128,13 @@ Počas nahrávania sa ignorujú: `seek`, `rewind`, zmena tempa, metra, odpočít
   "mixer": {
     "masterDb": 0.0,
     "masterLevelDb": -14.2,
-    "trackLevels": [ { "id": "1001", "levelDb": -16.8 }, { "id": "1002", "levelDb": -100 } ]
-  }
+    "trackLevels": [ { "id": "1001", "levelDb": -16.8 }, { "id": "1002", "levelDb": -100 } ],
+    "masterLevelL": -15.1,
+    "masterLevelR": -17.9
+  },
+
+  "selectedTrackId": "1001",
+  "inputGainDb": 0.0
 }
 ```
 
@@ -132,6 +150,11 @@ Polia pridané v API 3:
 - `mixer.masterDb` – hlavná hlasitosť v dB (−100 = ticho).
 - `mixer.trackLevels` – aktuálna úroveň signálu každej stopy pri prehrávaní (dB, −100 = ticho), na meradlá kanálov a VU metre. Úroveň je za hlasitosťou a panorámou stopy.
 - `mixer.masterLevelDb` – najvyššia z úrovní stôp (približná úroveň výstupu).
+
+Polia pridané v API 4:
+- `mixer.masterLevelL`, `mixer.masterLevelR` – skutočná úroveň výstupu zvukovej karty v dB, zvlášť ľavý a pravý kanál (VU metre). Obsahuje aj metronóm a odposluch.
+- `selectedTrackId` – vybraná vrstva (ak vybraná zanikla, prvá vrstva; bez vrstiev prázdny text).
+- `inputGainDb` – citlivosť vstupu (gombík INPUT).
 
 Poznámky:
 - `meter.inputDb` je v dB: −100 = ticho, 0 = maximum. Odporúčané pásma: zelená do −12, žltá do −3, červená nad −3.
@@ -186,5 +209,6 @@ Poznámky:
 | Verzia | Zmena |
 | --- | --- |
 | 1 | Prvá verzia: transport, vstup, merač, stopy, skladby, export, diagnostika |
+| 4 | Konzola Model 5: `selectTrack`, `trackAdd`, `setInputGain`, `saveSong`; v `state` pribudli `selectedTrackId`, `inputGainDb`, `mixer.masterLevelL/R` |
 | 3 | Mix: `trackVolume`, `trackPan`, `trackSolo`, `masterVolume`; v `tracks` pribudli `solo`, `volumeDb`, `pan`; v `state` pribudol `mixer` (úrovne stôp) |
 | 2 | Tempo, metrum, metronóm, odpočítanie, LOOP (IN/OUT/dĺžka v taktoch, nahrávanie vrstiev v slučke), `transport.countingIn`, `musicalPosition`, kláves L |

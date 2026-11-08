@@ -142,6 +142,22 @@ private:
     void setMasterVolumeDb (double db);
     juce::var buildMixerState();
 
+    // --- API v4: konzola Model 5 - implementacia v Console.cpp ---
+    te::LevelMeasurer::Client outMeterClient;          // skutocny vystup L/R (VU metre)
+    te::WaveOutputDevice* meteredOut = nullptr;
+    float outLevelL = -100.0f, outLevelR = -100.0f;
+    juce::String selectedTrackId;                      // vybrana vrstva (tlacidla 1-4, DATA)
+    float inputGainDb = 0.0f;                          // gombik INPUT
+    void syncOutputMeter();
+    void requestSave();                                // ulozenie o chvilu (fadery/gombiky posielaju vela zmien)
+    juce::uint32 saveDueMs = 0;
+    juce::uint32 recordingStartedMs = 0;
+    void detachOutputMeter();
+    void applyInputGain();
+    void selectTrack (const juce::String& trackId);
+    void addEmptyTrack();
+    juce::String getSelectedTrackId();
+
     // --- obrazovka v HTML (ui/) - implementacia vo WebBridge.cpp ---
     std::unique_ptr<juce::WebBrowserComponent> webView;
     bool webUIActive = false;
