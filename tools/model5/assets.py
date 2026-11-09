@@ -209,6 +209,44 @@ MASTER={'rewind':'stop','stop':'stop','play':'stop','rec':'stop',
         'layer1':'layer3','layer2':'layer3','layer3':'layer3','layer4':'layer3','layerAdd':'layer3','metroOn':'layer3',
         'mute1':'mute3','mute2':'mute3','mute3':'mute3','mute4':'mute3',
         'solo1':'solo3','solo2':'solo3','solo3':'solo3','solo4':'solo3'}
+QUAD=json.load(open('/tmp/gw/corners.json'))
+def fix_quads():
+    good=[k for k in QUAD if k not in ('rec','layer2','solo2')]
+    # priemerny sklon hornej a lavej hrany z dobrych tlacidiel
+    tops=[(QUAD[k][1][1]-QUAD[k][0][1])/(QUAD[k][1][0]-QUAD[k][0][0]) for k in good]
+    lefts=[(QUAD[k][3][0]-QUAD[k][0][0])/(QUAD[k][3][1]-QUAD[k][0][1]) for k in good]
+    ts,ls=float(np.median(tops)),float(np.median(lefts))
+    # chybne rohy: tvar podobneho susedneho tlacidla, prenesený podla obdlznika
+    for k,ref in (('rec','play'),('layer2','layer3'),('solo2','solo1')):
+        rx,ry,rw,rh=B[ref][:4]; x,y,w,h=B[k][:4]
+        QUAD[k]=[[x+(px-rx)*w/rw, y+(py-ry)*h/rh] for px,py in QUAD[ref]]
+fix_quads()
+def homo_warp(img_src,src_name,dst_name,offset_src,offset_dst,size):
+    S=np.float32(QUAD[src_name])-np.float32(offset_src); D=np.float32(QUAD[dst_name])-np.float32(offset_dst)
+    Hm=cv2.getPerspectiveTransform(S,D)
+    return cv2.warpPerspective(img_src,Hm,size,flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
+def lit_from(master,n,glyph,ink_col,tint=None,affine=False):
+    """svietiaci stav z pravej fotky svietiaceho tlacidla, natvarovany do perspektivy tlacidla n"""
+    mx0,my0,_,_=crop(B[master]); x0,y0,x1,y1=crop(B[n])
+    face=clean(master)
+    if tint is not None:
+        L=lum(face)/255.0; h_,w_=L.shape
+        face=np.clip((0.15+1.05*L)[...,None]*tint,0,255)
+    # len telo tlacidla z predlohy (bez susednych tlacidiel v okraji)
+    bx,by,bw,bh=B[master][:4]
+    mm=np.zeros(face.shape[:2],np.float32); mm[by-my0-1:by-my0+bh+7,bx-mx0-1:bx-mx0+bw+2]=1
+    if affine:
+        rb=B[master]; bw_,bh_=B[n][2],B[n][3]; sx_=bw_/rb[2]; sy_=bh_/rb[3]
+        M=np.float32([[sx_,0,4-4*sx_],[0,sy_,4-4*sy_]]); sz=(x1-x0,y1-y0)
+        w=cv2.warpAffine(face,M,sz,flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
+        wm=cv2.warpAffine(mm,M,sz,flags=cv2.INTER_LINEAR)
+    else:
+        w=homo_warp(face,master,n,(mx0,my0),(x0,y0),(x1-x0,y1-y0))
+        wm=homo_warp(mm,master,n,(mx0,my0),(x0,y0),(x1-x0,y1-y0))
+    wm=cv2.GaussianBlur(np.clip(wm,0,1),(3,3),0)[...,None]
+    base=warp_master(MASTER[n],n)
+    w=w*wm+base*(1-wm)
+    return w*(1-glyph[...,None])+ink_col*glyph[...,None]
 def warp_master(master,n):
     rb=B[master]; bx,by,bw,bh=B[n][:4]; x0,y0,x1,y1=crop(B[n])
     body=clean(master)
@@ -225,6 +263,10 @@ AMBER=np.array([42,160,255],np.float32)             # jantar (BGR) – rovnaky p
 RED_M=np.array([52,72,236],np.float32)               # M: tepla cervena
 YEL_S=np.array([62,200,250],np.float32)              # S: jantarovo-zlta
 INK_OFF=ink('layer3'); INK_ON=np.array([24,40,92],np.float32)
+INK_LIT=ink('layer1')
+LIT_MASTER={'loopIn':'loop','loopOut':'loop','rewind':'loop','stop':'loop','play':'loop'}
+SOFT_RED=np.array([72,82,196],np.float32)    # M: zjemnena cervena (BGR)
+SOFT_YEL=np.array([78,178,222],np.float32)   # S: zjemnena jantarovo-zlta
 def light(base,colr,lift=0.0):
     # svetlo zvnutra: tienovanie tlacidla sa zachova, jas sa zjednoti
     L=lum(base); h,w=L.shape; cm=np.zeros_like(L,bool); cm[6:h-12,6:w-6]=True
@@ -255,13 +297,14 @@ for n,r in B.items():
         if n.startswith('mute'):
             Lo=lum(base)[...,None]; base=base*0.62+Lo*0.38; base=base*0.93
             off=base*(1-ga[...,None])+ink('mute3')*ga[...,None]
-            on=light(base,RED_M)*(1-ga[...,None])+np.array([235,238,245],np.float32)*ga[...,None]
+            on=lit_from('mute2',n,ga,np.array([238,236,240],np.float32),tint=SOFT_RED,affine=True)
         elif n.startswith('solo'):
             off=base*(1-ga[...,None])+ink('solo3')*ga[...,None]
-            on=light(base,YEL_S)*(1-ga[...,None])+np.array([22,26,40],np.float32)*ga[...,None]
+            on=lit_from('mute2',n,ga,np.array([30,34,52],np.float32),tint=SOFT_YEL,affine=True)
         else:
             off=base*(1-ga[...,None])+INK_OFF*ga[...,None]
-            on=light(base,AMBER)*(1-ga[...,None])+INK_ON*ga[...,None]
+            if n in ('layer1','loop','metroOn'): on=src          # povodne svietiace tlacidla z fotky
+            else: on=lit_from(LIT_MASTER.get(n,'layer1'),n,ga,INK_LIT)
     off=np.where(m[...,None]>0,off,src); on=np.where(m[...,None]>0,on,src)
     plate[y0:y1,x0:x1]=src*(1-m[...,None])+off*m[...,None]
     save_sprite(f'btn_{n}_off',off,m); save_sprite(f'btn_{n}_on',on,m)

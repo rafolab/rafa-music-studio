@@ -167,4 +167,4 @@ body { background: #120904; }
 .tp-name .ms button.s.on { background: linear-gradient(#ffe066, #e0b000); color: #2a1a10; }
 .tp-wave { flex: 1; height: 40px; overflow: hidden; }
 .tp-wave canvas { height: 40px; display: block; }
-.tp-foot { margin-top: 6px; font-size: 10.5px; color: #8f5a22; padding-right: 150px; }
+.tp-foot { margin-top: 6px; font-size: 10.5px; color: #8f5a22; }

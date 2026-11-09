@@ -88,6 +88,20 @@ void MainComponent::setupWebUI()
         return;   // vynutena klasicka obrazovka
 
     auto userData = RafaPaths::getRootFolder().getChildFile ("WebView");
+
+    // Nova verzia programu = nova grafika: stara vyrovnavacia pamat WebView2 by mohla
+    // ukazovat stare obrazky. Pri zmene zostavenia ju preto vymazeme.
+    {
+        const juce::String build = juce::String (__DATE__) + " " + __TIME__;
+        auto stampFile = RafaPaths::getRootFolder().getChildFile ("webview-build.txt");
+
+        if (stampFile.loadFileAsString().trim() != build)
+        {
+            const bool removed = ! userData.exists() || userData.deleteRecursively();
+            stampFile.replaceWithText (build);
+            juce::Logger::writeToLog ("   WebView2: nova verzia, vyrovnavacia pamat vymazana: " + juce::String (removed ? "ano" : "nie"));
+        }
+    }
     userData.createDirectory();
 
     auto options = juce::WebBrowserComponent::Options{}

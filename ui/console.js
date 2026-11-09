@@ -771,6 +771,9 @@
       const w = W * scale;
       Object.assign(pnl.style, { left: px(stageX), width: px(w), top: px(stageY + H * scale + 6) });
       document.body.style.height = open ? px(stageY + H * scale + 6 + pnl.offsetHeight + 40) : "";
+      // otvoreny panel: zalozka sedi nad jeho hornym okrajom (neprekryva text), zatvoreny: dole v okne
+      if (open) Object.assign(tab.style, { position: "absolute", bottom: "auto", top: px(stageY + H * scale + 6 - 22) });
+      else Object.assign(tab.style, { position: "", bottom: "", top: "" });
       tab.textContent = open ? "▼ STOPY  (T)" : "▲ STOPY  (T)";
       tab.classList.toggle("open", open);
     }
