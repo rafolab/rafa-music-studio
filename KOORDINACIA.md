@@ -75,6 +75,7 @@ Program je natívna Windows aplikácia. Obrazovka je HTML zobrazené vo vstavano
 | 2 | Tempo, metronóm, slučka (LOOP): `API.md` v2 + motor + simulácia (Claude) | hotové, overené v simulovanom zvukovom prostredí |
 | 3 | Mix vrstiev: `API.md` v3 + motor + simulácia (Claude) | hotové, overené so skutočným motorom (JACK dummy) |
 | 3c | ~~Oživenie fádrov… (ChatGPT)~~ – nahradené novou konzolou Model 5 | zrušené |
+| 2E | Opravná verzia: kanály PAN/fadery ako jedna plocha, všetky tlačidlá z jedného vzoru na rad + jednotné svetlo, LOOP/IN z OUT, menu (klik = výber, dvojklik = potvrdiť), ZOOM a plynulá hlava v paneli STOPY. Grafika V2/V3 nezačlenená (V2 zálohovaná). Stabilná verzia pred 2E = commit `4615766`. | hotové, čaká na test na Windows |
 | 2D | LOOP v taktoch (1–16) z displeja, panel STOPY (T), UNDO/REDO pokusov, M červené / S žlté, MONITOR texty, Rozpracované / Uložiť ako, export stôp pre Sonar (API v5) | hotové, čaká na test na Windows |
 | 2A–2C | Konzola Model 5: čistý panel, 44 samostatných prvkov (`ui/assets`, `ui/controls.js`, `ui/console.js`), API v4, motor. Robí Claude, ChatGPT kontroluje vzhľad a ergonómiu. Nástroje na výrobu grafiky: `tools/model5/` | hotové, otestované na Windows (BEAM Mini) |
 | – | MIDI (klávesy Akai) | odložené – Windows klávesy zatiaľ nevidí (problém s USB pripojením) |

@@ -256,7 +256,7 @@
     };
     hit.addEventListener("pointerup", end); hit.addEventListener("pointercancel", end);
     let wheelT = 0;
-    hit.addEventListener("wheel", (ev) => { ev.preventDefault(); const d = ev.deltaY < 0 ? 1 : -1; jogAcc += d * 15; drawKnob(o, jogAcc); hit.classList.add("active"); clearTimeout(wheelT); wheelT = setTimeout(() => hit.classList.remove("active"), 300); jogStep(d, ev.shiftKey); }, { passive: false });
+    hit.addEventListener("wheel", (ev) => { ev.preventDefault(); const w_ = wheelStep(ev); if (!w_) return; const d = -w_; jogAcc += d * 15; drawKnob(o, jogAcc); hit.classList.add("active"); clearTimeout(wheelT); wheelT = setTimeout(() => hit.classList.remove("active"), 300); jogStep(d, ev.shiftKey); }, { passive: false });
   }
   // stlačenie DATA: v menu vyberie položku, inak otvorí rýchly výber vrstvy
   function jogPress () {
@@ -459,6 +459,7 @@
 
   // ------------------------------------------------------------------ MENU na displeji
   let menu = null;  // { id, title, items:[{t, act, dis, sub}], sel, parent }
+  let lastMenuHtml = "";
   const menuEl = $("#dMenu");
   const LOOP_BARS = [1, 2, 4, 8, 16];
   const isDraftWithTakes = () => st && st.song && st.song.isDraft && st.song.hasRecordings;
@@ -565,24 +566,39 @@
     openMenu({ id: "confirm", title, note: text, items: [ { t: "Áno", act: yes }, { t: "Nie", act: () => {} } ] });
     menu.sel = 1; drawMenu();
   }
-  function closeMenu () { menu = null; menuEl.hidden = true; render(); }
-  let lastMenuHtml = "";
+  function closeMenu () { menu = null; menuEl.hidden = true; lastMenuHtml = ""; render(); }
   function drawMenuQuiet () { const r = render; render = () => {}; drawMenu(); render = r; }
   const MENU_ROWS = 5;
   function drawMenu () {
     if (!menu) return;
     menuEl.hidden = false;
-    const n = menu.items.length, first = clamp(menu.sel - Math.floor(MENU_ROWS / 2), 0, Math.max(0, n - MENU_ROWS));
+    const n = menu.items.length;
+    // okno sa posunie len ked vyber vyjde mimo neho (klik mysou okno nehybe)
+    let first = menu.first || 0;
+    if (menu.sel < first) first = menu.sel; else if (menu.sel >= first + MENU_ROWS) first = menu.sel - MENU_ROWS + 1;
+    first = clamp(first, 0, Math.max(0, n - MENU_ROWS)); menu.first = first;
     const rows = menu.items.slice(first, first + MENU_ROWS).map((it, k) => { const i = first + k;
-      return `<div class="mi${i === menu.sel ? " sel" : ""}${it.dis ? " dis" : ""}" data-i="${i}">${escapeHtml(it.t)}</div>`; }).join("");
-    menuEl.innerHTML = "<h4>" + escapeHtml(menu.title) + (n > MENU_ROWS ? `<span class="pos">${menu.sel + 1}/${n}</span>` : "") + "</h4>" +
+      return `<div class="mi${it.dis ? " dis" : ""}" data-i="${i}">${escapeHtml(it.t)}</div>`; }).join("");
+    const html = "<h4>" + escapeHtml(menu.title) + (n > MENU_ROWS ? `<span class="pos">${menu.sel + 1}/${n}</span>` : "") + "</h4>" +
       (menu.note ? `<div class="note">${escapeHtml(menu.note)}</div>` : "") + rows +
-      `<div class="hint">DATA: otočiť = pohyb, klik = vybrať, ${menu.parent ? "Esc = späť" : "tlačidlo = zavrieť"}</div>`;
+      `<div class="hint">DATA / koliesko = pohyb · dvojklik, Enter alebo stlačenie DATA = potvrdiť · ${menu.parent ? "Esc = späť" : "tlačidlo = zavrieť"}</div>`;
+    // DOM menime len ked sa obsah naozaj zmenil – inak by sa klik / dvojklik "stratil" pri obnove 15× za sekundu
+    if (html !== lastMenuHtml || !menuEl.firstChild) { menuEl.innerHTML = html; lastMenuHtml = html; }
+    // zvyraznenie vyberu bez prestavby DOM (dvojklik tak trafi tu istu polozku)
+    menuEl.querySelectorAll(".mi").forEach(e => e.classList.toggle("sel", +e.dataset.i === menu.sel));
     render();
   }
-  menuEl.addEventListener("pointerover", (ev) => { const i = ev.target.dataset && ev.target.dataset.i; if (i !== undefined && menu && menu.sel !== +i) { menu.sel = +i; drawMenu(); } });
-  menuEl.addEventListener("click", (ev) => { const i = ev.target.dataset && ev.target.dataset.i; if (i !== undefined && menu) { menu.sel = +i; menuEnter(); } });
-  menuEl.addEventListener("wheel", (ev) => { if (menu && menu.items.length) { ev.preventDefault(); menuMove(ev.deltaY > 0 ? 1 : -1); } }, { passive: false });
+  // mys: klik = vybrat polozku, dvojklik = potvrdit (ako Enter alebo stlacenie DATA)
+  const itemAt = (ev) => { const e = ev.target.closest && ev.target.closest(".mi"); return e ? +e.dataset.i : -1; };
+  menuEl.addEventListener("click", (ev) => { const i = itemAt(ev); if (i >= 0 && menu && menu.sel !== i) { menu.sel = i; drawMenu(); } });
+  menuEl.addEventListener("dblclick", (ev) => { const i = itemAt(ev); if (i >= 0 && menu) { menu.sel = i; menuEnter(); } });
+  // koliesko: vzdy presne o jednu polozku (aj pri touchpade, ktory posiela vela malych udalosti)
+  const wheelStep = (() => { let acc = 0, last = 0; return (ev) => {
+    const now = performance.now(); if (now - last > 250) acc = 0;
+    acc += ev.deltaMode === 1 ? ev.deltaY * 40 : ev.deltaY; last = now;
+    if (Math.abs(acc) < 50) return 0;
+    const d = acc > 0 ? 1 : -1; acc = 0; return d; }; })();
+  menuEl.addEventListener("wheel", (ev) => { if (menu && menu.items.length) { ev.preventDefault(); const d = wheelStep(ev); if (d) menuMove(d); } }, { passive: false });
   function menuMove (dir) { if (!menu || !menu.items.length) return; menu.sel = clamp(menu.sel + dir, 0, menu.items.length - 1); drawMenu(); }
   function menuEnter () {
     if (!menu) return; const it = menu.items[menu.sel]; if (!it || it.dis) return;
@@ -597,6 +613,7 @@
   // textove pole na displeji (premenovanie stopy, nazov skladby)
   function askText (title, value, done) {
     menuEl.hidden = false;
+    lastMenuHtml = "";
     menuEl.innerHTML = `<h4>${escapeHtml(title)}</h4><input id="dText" maxlength="60" class="d-input" value="${escapeHtml(value)}"><div class="hint">Enter = uložiť · Esc = zrušiť</div>`;
     menu = { id: "text", title: "", items: [], sel: 0 };
     const inp = $("#dText"); setTimeout(() => { inp.focus(); inp.select(); }, 0);
@@ -680,6 +697,17 @@
     LED.effects.classList.toggle("lit", !!(menu && menu.id === "effects"));
   }
 
+  // plynula hlava prehravania: medzi spravami z motora dopocitame cas podla hodin
+  let posBase = 0, posAt = 0;
+  function livePos () {
+    if (!st || !st.transport) return 0;
+    const t = st.transport;
+    if (!t.playing || t.countingIn) return t.position || 0;
+    let p = posBase + (performance.now() - posAt) / 1000;
+    const lp = st.loop || {};
+    if (lp.on && lp.end > lp.start && posBase >= lp.start - 0.05 && p >= lp.end) p = lp.start + ((p - lp.start) % (lp.end - lp.start));
+    return p;
+  }
   // animácia VU (balistika VU: 300 ms)
   let lastT = performance.now();
   function frame (now) {
@@ -691,6 +719,11 @@
       drawNeedle(o, vuAngle(o.val));
     }
     beatLed();
+    if (st && st.transport && st.transport.playing) {
+      const p = livePos(), w = laneW();
+      headEl.style.left = px(LANE_X + clamp(p / viewLength, 0, 1) * (w - 2));
+      RafaPanel.head(p);
+    }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
@@ -709,6 +742,11 @@
           <span class="tp-sep"></span>
           <button data-a="undo" title="">↶ UNDO</button>
           <button data-a="redo">↷ REDO</button>
+          <span class="tp-sep"></span>
+          <span class="tp-zoomlbl">ZOOM</span>
+          <button data-a="zout" title="Oddialiť (Ctrl + koliesko)">−</button>
+          <button data-a="zin" title="Priblížiť (Ctrl + koliesko)">+</button>
+          <button data-a="zfit" title="Celá skladba">Celé</button>
         </span>
       </div>
       <div class="tp-ruler"><div class="tp-marks"></div><div class="tp-loop"><i>IN</i><i>OUT</i></div><div class="tp-head-line"></div></div>
@@ -718,6 +756,16 @@
           loopR = pnl.querySelector(".tp-loop"), headR = pnl.querySelector(".tp-head-line"), foot = pnl.querySelector(".tp-foot");
     const NAME_W = 210;
     let open = false, rowEls = new Map(), marksSig = "";
+    // ZOOM: viditelne okno casu [vStart, vStart + vLen]
+    let zoom = 1, vStart = 0;
+    const vLen = () => viewLength / zoom;
+    const clampView = () => { vStart = clamp(vStart, 0, Math.max(0, viewLength - vLen())); };
+    function setZoom (z, aroundT) {
+      const old = vLen(); zoom = clamp(z, 1, 64);
+      const at = aroundT === undefined ? vStart + old / 2 : aroundT, frac = (at - vStart) / old;
+      vStart = at - frac * vLen(); clampView(); marksSig = ""; for (const r of rowEls.values()) r.sig = ""; update(false);
+    }
+    const timeAtX = (clientX) => { const r = marks.getBoundingClientRect(); return vStart + clamp((clientX - r.left) / r.width, 0, 1) * vLen(); };
 
     function layout () {
       const w = W * scale;
@@ -739,28 +787,43 @@
       else if (a === "delete") deleteSelected();
       else if (a === "undo") send("undo");
       else if (a === "redo") send("redo");
+      else if (a === "zin") setZoom(zoom * 2, st && st.transport ? livePos() : undefined);
+      else if (a === "zout") setZoom(zoom / 2, st && st.transport ? livePos() : undefined);
+      else if (a === "zfit") { zoom = 1; vStart = 0; setZoom(1); }
     });
+    // Ctrl + koliesko = zoom okolo kurzora, koliesko = posun v case (ked je priblizene)
+    pnl.addEventListener("wheel", (ev) => {
+      if (!ev.target.closest(".tp-wave, .tp-ruler")) return;
+      if (ev.ctrlKey) { ev.preventDefault(); setZoom(ev.deltaY < 0 ? zoom * 1.5 : zoom / 1.5, timeAtX(ev.clientX)); }
+      else if (zoom > 1) { ev.preventDefault(); vStart += (ev.deltaY || ev.deltaX) / 400 * vLen(); clampView(); marksSig = ""; for (const r of rowEls.values()) r.sig = ""; update(false); }
+    }, { passive: false });
     // klik do casovej osi = presun hlavy
-    ruler.addEventListener("click", (ev) => {
-      if (rec()) return;
-      const r = marks.getBoundingClientRect(); const t = clamp((ev.clientX - r.left) / r.width, 0, 1) * viewLength;
-      send("seek", { seconds: t });
-    });
+    function seekTo (t) { if (rec()) return; send("seek", { seconds: Math.max(0, t) }); if (st && st.transport) { st.transport.position = t; posBase = t; posAt = performance.now(); } head(t); }
+    ruler.addEventListener("click", (ev) => seekTo(timeAtX(ev.clientX)));
 
     function laneWidth () { return Math.max(100, pnl.clientWidth - NAME_W - 24); }
+    function head (p) {
+      if (!open) return;
+      const w = laneWidth(), x = (p - vStart) / vLen();
+      headR.style.display = x < 0 || x > 1 ? "none" : "block";
+      headR.style.left = px(NAME_W + clamp(x, 0, 1) * w);
+      // pri prehravani s priblizenim drzime hlavu v obraze
+      if (zoom > 1 && st && st.transport && st.transport.playing && (x > 0.92 || x < 0)) { vStart = p - vLen() * 0.1; clampView(); marksSig = ""; for (const r of rowEls.values()) r.sig = ""; update(false); }
+    }
     function drawRow (r, t, w) {
-      const sig = t.id + ":" + t.clips.map(c => c.start + "/" + c.length + "/" + (c.peaks ? c.peaks.length : 0)).join(",") + ":" + viewLength + ":" + w;
+      const sig = t.id + ":" + t.clips.map(c => c.start + "/" + c.length + "/" + (c.peaks ? c.peaks.length : 0)).join(",") + ":" + viewLength + ":" + w + ":" + vStart.toFixed(3) + ":" + zoom;
       if (r.sig === sig) return; r.sig = sig;
       const cv = r.cv, dpr = 2; cv.width = w * dpr; cv.height = 40 * dpr; cv.style.width = px(w);
       const g = cv.getContext("2d"); g.clearRect(0, 0, cv.width, cv.height);
-      const sx = cv.width / viewLength, mid = cv.height / 2;
+      const sx = cv.width / vLen(), mid = cv.height / 2;
       for (const c of t.clips) {
-        const x0 = c.start * sx, cw = Math.max(2, c.length * sx);
+        const x0 = (c.start - vStart) * sx, cw = Math.max(2, c.length * sx);
+        if (x0 > cv.width || x0 + cw < 0) continue;
         g.fillStyle = "rgba(255,170,60,.10)"; g.fillRect(x0, 2, cw, cv.height - 4);
         g.strokeStyle = "rgba(255,170,60,.45)"; g.lineWidth = 1; g.strokeRect(x0 + .5, 2.5, cw - 1, cv.height - 5);
         const pk = c.peaks || []; if (!pk.length) continue;
         g.fillStyle = "#ffb547"; const step = cw / pk.length;
-        for (let i = 0; i < pk.length; i++) { const h = Math.max(1, pk[i] * (mid - 6)); g.fillRect(x0 + i * step, mid - h, Math.max(1, step * .85), h * 2); }
+        for (let i = 0; i < pk.length; i++) { const xi = x0 + i * step; if (xi + step < 0 || xi > cv.width) continue; const h = Math.max(1, pk[i] * (mid - 6)); g.fillRect(xi, mid - h, Math.max(1, step * .85), h * 2); }
       }
     }
     function update (force) {
@@ -775,17 +838,21 @@
       b("rename").disabled = !selectedTrack(); b("delete").disabled = !selectedTrack() || rec(); b("add").disabled = rec();
       // casova os (takty)
       const barLen = st.tempo ? 60 / st.tempo.bpm * st.tempo.numerator * (4 / st.tempo.denominator) : 2;
-      const msig = w + ":" + barLen + ":" + viewLength;
+      clampView();
+      const msig = w + ":" + barLen + ":" + viewLength + ":" + vStart.toFixed(3) + ":" + zoom;
       if (msig !== marksSig) {
-        marksSig = msig; let step = 1; while (viewLength / (barLen * step) > 24) step *= 2; let hh = "";
-        for (let k = 0; k * barLen <= viewLength + 1e-6; k += step) hh += `<span style="left:${(k * barLen / viewLength * w).toFixed(1)}px">${k + 1}</span>`;
+        marksSig = msig; let step = 1; while (vLen() / (barLen * step) > 24) step *= 2; let hh = "";
+        const k0 = Math.floor(vStart / barLen / step) * step;
+        for (let k = k0; k * barLen <= vStart + vLen() + 1e-6; k += step) { const x = (k * barLen - vStart) / vLen() * w; if (x >= -1) hh += `<span style="left:${x.toFixed(1)}px">${k + 1}</span>`; }
         marks.innerHTML = hh;
       }
+      pnl.querySelector('[data-a="zout"]').disabled = zoom <= 1; pnl.querySelector('[data-a="zfit"]').disabled = zoom <= 1;
       marks.style.width = px(w); marks.style.left = px(NAME_W);
       loopR.style.display = lp.end > lp.start ? "block" : "none";
       loopR.classList.toggle("off", !lp.on);
-      loopR.style.left = px(NAME_W + lp.start / viewLength * w); loopR.style.width = px(Math.max(2, (lp.end - lp.start) / viewLength * w));
-      headR.style.left = px(NAME_W + clamp((t.position || 0) / viewLength, 0, 1) * w);
+      const lx0 = clamp((lp.start - vStart) / vLen(), 0, 1), lx1 = clamp((lp.end - vStart) / vLen(), 0, 1);
+      loopR.style.left = px(NAME_W + lx0 * w); loopR.style.width = px(Math.max(2, (lx1 - lx0) * w));
+      if (!t.playing) head(t.position || 0);
       // riadky
       const seen = new Set();
       tracks.forEach((tr, i) => {
@@ -795,7 +862,11 @@
           const row = el("div", "tp-row", rowsEl);
           row.innerHTML = `<div class="tp-name"><span class="n"></span><span class="nm"></span><span class="ms"><button class="m">M</button><button class="s">S</button></span></div><div class="tp-wave"><canvas></canvas></div>`;
           r = { row, cv: row.querySelector("canvas"), nm: row.querySelector(".nm"), n: row.querySelector(".n"), m: row.querySelector(".m"), s: row.querySelector(".s"), sig: "" };
-          row.addEventListener("click", (ev) => { if (ev.target.tagName !== "BUTTON") pickTrack(tracks.find(x => x.id === tr.id) || tr); });
+          row.addEventListener("click", (ev) => {
+            if (ev.target.tagName === "BUTTON") return;
+            pickTrack(tracks.find(x => x.id === tr.id) || tr);
+            if (ev.target.closest(".tp-wave")) seekTo(timeAtX(ev.clientX));
+          });
           r.nm.addEventListener("dblclick", () => renameTrack(tracks.find(x => x.id === tr.id)));
           r.m.addEventListener("click", () => { const x = tracks.find(y => y.id === tr.id); if (x) send("trackMute", { trackId: x.id, muted: !x.muted }); });
           r.s.addEventListener("click", () => { const x = tracks.find(y => y.id === tr.id); if (x) send("trackSolo", { trackId: x.id, solo: !x.solo }); });
@@ -809,12 +880,12 @@
         drawRow(r, tr, w);
       });
       for (const [id, r] of rowEls) if (!seen.has(id)) { r.row.remove(); rowEls.delete(id); }
-      foot.textContent = tracks.length ? "Klik = vybrať · dvojklik na názov = premenovať · klik do časovej osi = presun · Ctrl+Z / Ctrl+Y = vrátiť / obnoviť pokus · Delete = odstrániť stopu"
+      foot.textContent = tracks.length ? "Klik do vlny = vybrať stopu a presunúť hlavu · dvojklik na názov = premenovať · Ctrl + koliesko = ZOOM, koliesko = posun · Ctrl+Z / Ctrl+Y = vrátiť / obnoviť"
                                        : "Zatiaľ žiadna stopa – stlač REC na konzole.";
       if (force) layout();
     }
     let lastH = 0;
-    return { layout, toggle, update: () => { update(false); if (open && pnl.offsetHeight !== lastH) { lastH = pnl.offsetHeight; layout(); } }, get open () { return open; } };
+    return { layout, toggle, head, update: () => { update(false); if (open && pnl.offsetHeight !== lastH) { lastH = pnl.offsetHeight; layout(); } }, get open () { return open; } };
   })();
 
   // ------------------------------------------------------------------ motor
@@ -824,6 +895,7 @@
     if (stx && stx !== lastStatus && lastStatus !== "") flashValue(stx, s.status.level === "error" || s.status.level === "warn" ? 3500 : 2200);
     lastStatus = stx || lastStatus;
     st = s;
+    if (s.transport) { posBase = s.transport.position || 0; posAt = performance.now(); }
     if (pendingSongList && s.songList) { const fn = pendingSongList; pendingSongList = null; fn(s.songList); } if (menu && ["project", "tracks", "effects", "settings"].includes(menu.id) && !menu.parent) { const m = buildMenu(menu.id); m.sel = menu.sel; menu = m; drawMenuQuiet(); } render(); });
   Rafa.on("tracks", (t) => {
     tracks = (t && t.tracks) || []; viewLength = (t && t.viewLength) || 30;

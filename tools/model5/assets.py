@@ -147,6 +147,10 @@ for n,f in F.items():
 cv2.imwrite('/tmp/gw/plate_nofaders.png',plate.astype(np.uint8))
 json.dump(ctl,open('/tmp/gw/ctl_partial.json','w'),indent=1)
 
+# ---------- 2b. pas kanalov PAN/fadery: jednotna plocha (Etapa 2E) ----------
+cv2.imwrite('/tmp/gw/plate_in.png',np.clip(plate,0,255).astype(np.uint8))
+import subprocess; subprocess.run(['python3','/tmp/gw/strip_fix.py'],check=True)
+plate=cv2.imread('/tmp/gw/plate_strip.png').astype(np.float32)
 # ---------- 3. tlacidla ----------
 B={ # id: (x,y,w,h) z detekcie, typ
  'project':(1330,148,113,41,'menu'),'tracks':(1336,196,115,41,'menu'),'effects':(1342,245,117,42,'menu'),'settings':(1348,292,119,38,'menu'),
@@ -171,8 +175,8 @@ def remap(src,refpix):
     # vyhladit farby referencie podla jasu
     k=max(3,len(refs)//60); sm=np.array([refs[max(0,i-k):i+k].mean(0) for i in range(len(refs))])
     return sm[idx].reshape(src.shape)
-def glyph_alpha(src):
-    L=lum(src); bl=cv2.GaussianBlur(L,(0,0),5)
+def glyph_alpha(src,sig=5):
+    L=lum(src); bl=cv2.GaussianBlur(L,(0,0),sig)
     ga=np.clip((bl-L-14)/30,0,1)
     inner=np.zeros_like(ga); h,w=ga.shape; inner[int(h*0.18):int(h*0.78),int(w*0.18):int(w*0.85)]=1
     return cv2.GaussianBlur(ga*inner,(3,3),0)
@@ -199,59 +203,72 @@ def compose(src,palette,inkcol,strength=1.0,flatten=False,smooth=False):
     if smooth: base=cv2.bilateralFilter(np.clip(base,0,255).astype(np.uint8),7,40,7).astype(np.float32)
     col=remap(base,palette)
     return col*(1-ga[...,None]*strength)+inkcol*ga[...,None]*strength
-off_imgs={}; on_imgs={}
+# ===== Etapa 2E: vsetky tlacidla z jedneho cisteho vzoru na rad + jednotny svetelny model =====
+MASTER={'rewind':'stop','stop':'stop','play':'stop','rec':'stop',
+        'loopIn':'loopOut','loopOut':'loopOut','loop':'loopOut',
+        'layer1':'layer3','layer2':'layer3','layer3':'layer3','layer4':'layer3','layerAdd':'layer3','metroOn':'layer3',
+        'mute1':'mute3','mute2':'mute3','mute3':'mute3','mute4':'mute3',
+        'solo1':'solo3','solo2':'solo3','solo3':'solo3','solo4':'solo3'}
+def warp_master(master,n):
+    rb=B[master]; bx,by,bw,bh=B[n][:4]; x0,y0,x1,y1=crop(B[n])
+    body=clean(master)
+    # neutralizovat farebny nadych vzoru (bez oranzovych odleskov), zachovat tienovanie
+    Lb=lum(body)[...,None]; gray=np.repeat(Lb,3,2)
+    tint=np.median(core(body),0); tint=tint/max(1,tint.mean())
+    body=gray*0.55+body*0.45
+    sx_=bw/rb[2]; sy_=bh/rb[3]
+    M=np.float32([[sx_,0,4-4*sx_],[0,sy_,4-4*sy_]])
+    return cv2.warpAffine(body,M,(x1-x0,y1-y0),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
+AMBER=np.median(core(clean('layer1')),0)            # farba povodneho svietiaceho tlacidla
+AMBER=AMBER/AMBER.max()*np.array([1,1,1])*255*np.array([0.42,0.72,1.0])/np.array([0.42,0.72,1.0]).max()
+AMBER=np.array([42,160,255],np.float32)             # jantar (BGR) – rovnaky pre vsetky tlacidla
+RED_M=np.array([52,72,236],np.float32)               # M: tepla cervena
+YEL_S=np.array([62,200,250],np.float32)              # S: jantarovo-zlta
+INK_OFF=ink('layer3'); INK_ON=np.array([24,40,92],np.float32)
+def light(base,colr,lift=0.0):
+    # svetlo zvnutra: tienovanie tlacidla sa zachova, jas sa zjednoti
+    L=lum(base); h,w=L.shape; cm=np.zeros_like(L,bool); cm[6:h-12,6:w-6]=True
+    n_=L/max(1,np.median(L[cm]))
+    k=np.clip(0.50+0.55*n_+lift,0,1.25)[...,None]
+    # jemna ziara stredu
+    yy,xx=np.mgrid[0:h,0:w]; g=np.exp(-(((xx-w/2)/(w*0.55))**2+((yy-h*0.42)/(h*0.55))**2))[...,None]
+    vg=np.linspace(1.04,0.9,h)[:,None,None]
+    return np.clip(colr*k*(0.92+0.14*g)*vg,0,255)
 for n,r in B.items():
     x0,y0,x1,y1=crop(r); src=P[y0:y1,x0:x1].copy(); kind=r[4]
     bx,by,bw,bh=r[:4]
     m=np.zeros(src.shape[:2],np.float32); m[4-1:4+bh+7,4-1:4+bw+2]=1; m=cv2.GaussianBlur(m,(3,3),0)
-    def from_ref(refname,inkcol):
-        rb=B[refname]; rx0,ry0,rx1,ry1=crop(rb); refimg=clean(refname)
-        # mapovanie tela referencie na telo cieľa (posun + mierka)
-        sx_=bw/rb[2]; sy_=bh/rb[3]
-        M=np.float32([[sx_,0,4-4*sx_],[0,sy_,4-4*sy_]])
-        warped=cv2.warpAffine(refimg,M,(src.shape[1],src.shape[0]),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
-        ga=glyph_alpha(src)
-        return warped*(1-ga[...,None])+inkcol*ga[...,None]
-    REF={'layer1':'layer2','loop':'loopOut','metroOn':'layer4','mute2':'mute3','mute1':'mute3','mute4':'mute3','solo2':'solo1','solo4':'solo1'}
-    if kind=='grey': off=src; on=compose(src,pal['orange'],ink_on,smooth=True)
-    elif kind=='litgrey': on=src; off=from_ref(REF[n],ink_off)
-    elif kind=='cream': off=src; on=compose(src,pal['creamlit'],ink_m_on)
-    elif kind=='litcream': on=src; off=from_ref(REF[n],ink_m_off)
-    elif kind=='grey2': off=src; on=compose(src,pal['creamlit'],ink_m_on)
-    elif kind=='grey2fix':
-        off=from_ref(REF[n],ink('solo1')); on=compose(off,pal['creamlit'],ink_m_on)
+    if kind=='menu':
+        off=src; L=lum(src); t=np.clip((L-90)/80,0,1)[...,None]
+        on=src*(1-t)+np.array([90,190,255],np.float32)*t
     elif kind=='rec':
         on=src
         L=lum(src); bl=cv2.GaussianBlur(L,(0,0),5)
         gb=np.clip((L-bl-12)/30,0,1)
         inner=np.zeros_like(gb); h_,w_=gb.shape; inner[int(h_*0.2):int(h_*0.66),int(w_*0.15):int(w_*0.85)]=1
         gb=cv2.GaussianBlur(gb*inner,(3,3),0)
-        rb=B['play']; refimg=clean('play'); sx_=bw/rb[2]; sy_=bh/rb[3]
-        M=np.float32([[sx_,0,4-4*sx_],[0,sy_,4-4*sy_]])
-        base=cv2.warpAffine(refimg,M,(src.shape[1],src.shape[0]),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
+        base=warp_master('stop',n)
         off=base*(1-gb[...,None])+np.array([38,44,196],np.float32)*gb[...,None]
-    elif kind=='menu':
-        off=src; L=lum(src); t=np.clip((L-90)/80,0,1)[...,None]
-        on=src*(1-t)+np.array([90,190,255],np.float32)*t
-    off=np.where(m[...,None]>0,off,src); on=np.where(m[...,None]>0,on,src)
-    # Etapa 2D: M a S – neaktivne neutralne, aktivne M = cervene svetlo, S = zlte svetlo
-    if n.startswith('mute') or n.startswith('solo'):
+    else:
+        base=warp_master(MASTER[n],n)
+        ga=glyph_alpha(src,9 if n=='stop' else 5)    # znak tlacidla z originalu (na presnom mieste)
         if n.startswith('mute'):
-            # krémové M mierne stlmime, aby vypnute nevyzeralo ako rozsvietene
-            Lo=lum(off)[...,None]; off=off*0.62+Lo*0.38; off=off*0.93
-        ga=glyph_alpha(off); base=erase(off,ga)
-        L=lum(base)/255.0
-        lightc=np.array([52,48,235],np.float32) if n.startswith('mute') else np.array([40,205,255],np.float32)
-        face=np.clip((0.2+1.15*L)[...,None]*lightc,0,255)
-        ink_dark=np.array([30,22,20],np.float32) if n.startswith('solo') else np.array([245,240,240],np.float32)
-        on=face*(1-ga[...,None])+ink_dark*ga[...,None]
-        on=np.where(m[...,None]>0,on,src)
+            Lo=lum(base)[...,None]; base=base*0.62+Lo*0.38; base=base*0.93
+            off=base*(1-ga[...,None])+ink('mute3')*ga[...,None]
+            on=light(base,RED_M)*(1-ga[...,None])+np.array([235,238,245],np.float32)*ga[...,None]
+        elif n.startswith('solo'):
+            off=base*(1-ga[...,None])+ink('solo3')*ga[...,None]
+            on=light(base,YEL_S)*(1-ga[...,None])+np.array([22,26,40],np.float32)*ga[...,None]
+        else:
+            off=base*(1-ga[...,None])+INK_OFF*ga[...,None]
+            on=light(base,AMBER)*(1-ga[...,None])+INK_ON*ga[...,None]
+    off=np.where(m[...,None]>0,off,src); on=np.where(m[...,None]>0,on,src)
     plate[y0:y1,x0:x1]=src*(1-m[...,None])+off*m[...,None]
     save_sprite(f'btn_{n}_off',off,m); save_sprite(f'btn_{n}_on',on,m)
     ctl['buttons'][n]={'x':x0,'y':y0,'w':x1-x0,'h':y1-y0,'off':f'assets/btn_{n}_off.webp','on':f'assets/btn_{n}_on.webp','kind':kind}
 
 # svatozar okolo povodne svietiacich tlacidiel: ubrat oranzovy presah
-for n in ('layer1','mute1','mute2','mute4','solo4','loop','metroOn'):
+for n in ('layer1','layer2','mute1','mute2','mute4','solo4','loop','metroOn','rec','loopIn'):
     x0,y0,x1,y1=crop(B[n]); R=34
     X0,Y0,X1,Y1=x0-R,y0-R,x1+R,y1+R
     blk=plate[Y0:Y1,X0:X1]; ring=np.ones(blk.shape[:2],np.float32)
@@ -266,6 +283,9 @@ for n in ('layer1','mute1','mute2','mute4','solo4','loop','metroOn'):
     # nizkofrekvencny presah nad zakladnu farbu panelu odobrat (detaily ostanu)
     excess=np.clip(lowb-base_c,0,None)
     corr=blk-excess*np.clip(w[...,None]*1.6,0,1)
+    # zvysny farebny nadych (oranzovy / cerveny) odobrat smerom k sedej
+    gl=lum(corr)[...,None]; ww=np.clip(w[...,None]*1.8,0,1)*0.85
+    corr=corr*(1-ww)+np.repeat(gl,3,2)*ww
     plate[Y0:Y1,X0:X1]=np.where(ring[...,None]>0,corr,blk)
 
 # ---------- 4. LED ----------

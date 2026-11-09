@@ -136,6 +136,8 @@ body { background: #120904; }
 .tp-song { color: #c98a3e; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tp-btns { display: flex; gap: 6px; align-items: center; }
 .tp-sep { width: 10px; }
+.tp-zoomlbl { font-size: 10px; letter-spacing: .12em; color: #9a6326; }
+.tp-wave { cursor: text; }
 .tp button { font: 600 11.5px RafaSans, sans-serif; color: #2a1a10; background: linear-gradient(#e9e3da, #b9b1a6); border: 1px solid #5b4a3a;
   border-radius: 3px; padding: 3px 10px; cursor: pointer; box-shadow: 0 2px 0 #3a2a1d; }
 .tp button:active { transform: translateY(1px); box-shadow: 0 1px 0 #3a2a1d; }
@@ -149,6 +151,7 @@ body { background: #120904; }
 .tp-loop i:first-child { left: 0; } .tp-loop i:last-child { right: 0; }
 .tp-head-line { position: absolute; top: 0; width: 2px; height: 2000px; background: #ffd27a; box-shadow: 0 0 6px rgba(255, 190, 80, .9); pointer-events: none; z-index: 3; }
 .tp-ruler { overflow: visible; }
+.tp-marks { overflow: hidden; height: 16px; }
 .tp-rows { position: relative; max-height: 360px; overflow-y: auto; overflow-x: hidden; }
 .tp-row { display: flex; align-items: center; height: 44px; border-bottom: 1px solid rgba(255, 170, 60, .12); cursor: pointer; }
 .tp-row:hover { background: rgba(255, 170, 60, .05); }
