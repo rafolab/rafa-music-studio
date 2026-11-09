@@ -228,12 +228,31 @@ def fit_row(row,good):
     for i,k in enumerate(row):
         QUAD[k]=[[float(np.polyval(np.polyfit(good,A[:,c,d],1),i)) for d in range(2)] for c in range(4)]
 fit_row(['layer1','layer2','layer3','layer4','layerAdd'],[2,3,4])
+LIT1Q=[list(p) for p in QUAD['layer1']]
+fit_row(['mute1','mute2','mute3','mute4'],[0,2,3]); fit_row(['solo1','solo2','solo3','solo4'],[0,2,3])
+# --- tlacidlo 1: povodne svieti (vacsie, zatlacene) -> svietiacu predlohu si odlozit, na podklade ho
+#     nahradit klonom zhasnuteho tlacidla 2 a dat mu rovnaku velkost ako 2,3,4,+
+OLD1=B['layer1']; FACE1=clean('layer1'); GA1=glyph_alpha(region('layer1')); OFF1=crop(OLD1)[:2]
+dx,dy=-78,3
+for arr in (P,plate):   # lavy okraj povodne svietiaceho 1: bez oranzoveho svetla, tmavsi
+    st=arr[570:676,726:770].copy(); mk_=np.zeros(st.shape[:2],np.uint8); mk_[14:96,10:32]=255
+    inp=cv2.inpaint(np.clip(st,0,255).astype(np.uint8),mk_,6,cv2.INPAINT_TELEA).astype(np.float32)
+    fm=cv2.GaussianBlur(mk_.astype(np.float32)/255,(0,0),2)[...,None]
+    arr[570:676,726:770]=inp*fm+st*(1-fm)
+X0,Y0,X1,Y1=752,578,836,668
+cm=np.zeros((Y1-Y0,X1-X0),np.float32); cm[4:-4,3:-4]=1; cm=cv2.GaussianBlur(cm,(0,0),2)[...,None]
+srcblk=P[Y0-dy:Y1-dy,X0-dx:X1-dx].copy()
+for arr in (P,plate):
+    arr[Y0:Y1,X0:X1]=srcblk*cm+arr[Y0:Y1,X0:X1]*(1-cm)
+B['layer1']=(837+dx,591+dy,74,51,'grey')
+QUAD['layer1']=[[x+dx,y+dy] for x,y in QUAD['layer2']]
+QUAD['_lit1']=None
 def lit_persp(n,glyph,ink_col,master='layer1'):
     """svietiaci stav: prava fotka svietiaceho '1' prenesena homografiou z presnych rohov '1'
     na presne rohy tlacidla n (rovnaka perspektiva konzoly), maska = vlastny tvar tlacidla n"""
-    mx0,my0,_,_=crop(B[master]); x0,y0,x1,y1=crop(B[n]); sz=(x1-x0,y1-y0)
-    face=clean(master)
-    S=np.float32(QUAD[master])-np.float32([mx0,my0]); D=np.float32(QUAD[n])-np.float32([x0,y0])
+    mx0,my0=OFF1; x0,y0,x1,y1=crop(B[n]); sz=(x1-x0,y1-y0)
+    face=FACE1
+    S=np.float32(LIT1Q)-np.float32([mx0,my0]); D=np.float32(QUAD[n])-np.float32([x0,y0])
     Hm=cv2.getPerspectiveTransform(S,D)
     w=cv2.warpPerspective(face,Hm,sz,flags=cv2.INTER_CUBIC,borderMode=cv2.BORDER_REPLICATE)
     # maska: horna plocha + predna hrana (o ~13 % vysky nizsie), vsetko v perspektive tlacidla n
@@ -244,6 +263,15 @@ def lit_persp(n,glyph,ink_col,master='layer1'):
     base=warp_master(MASTER[n],n)
     out=w*mk+base*(1-mk)
     return np.clip(out*(1-glyph[...,None])+ink_col*glyph[...,None],0,255)
+def lit_ms(n,glyph,kind):
+    x0,y0,x1,y1=crop(B[n]); base=warp_master(MASTER[n],n)
+    full=lit_persp(n,np.zeros_like(glyph),np.zeros(3,np.float32))
+    d=np.abs(full-base).sum(2,keepdims=True); lm=np.clip(d/40,0,1)      # kde je svetlo
+    if kind=='M': mul=np.array([0.78,0.40,1.0],np.float32)   # jantar -> svietiaca cervena (BGR)
+    else:         mul=np.array([0.70,1.10,1.0],np.float32)   # jantar -> svietiaca zlta
+    col=np.clip(full*mul,0,255); col=col*lm+base*(1-lm)
+    ink_=np.array([40,40,90],np.float32) if kind=='M' else np.array([30,60,90],np.float32)
+    return np.clip(col*(1-glyph[...,None])+ink_*glyph[...,None],0,255)
 def homo_warp(img_src,src_name,dst_name,offset_src,offset_dst,size):
     S=np.float32(QUAD[src_name])-np.float32(offset_src); D=np.float32(QUAD[dst_name])-np.float32(offset_dst)
     Hm=cv2.getPerspectiveTransform(S,D)
@@ -340,16 +368,19 @@ for n,r in B.items():
     else:
         base=warp_master(MASTER[n],n)
         ga=glyph_alpha(src,9 if n=='stop' else 5)    # znak tlacidla z originalu (na presnom mieste)
+        if n=='layer1':   # znak '1' z povodnej fotky, preneseny do novej (zhodnej) polohy
+            Sq=np.float32(LIT1Q)-np.float32(OFF1); Dq=np.float32(QUAD[n])-np.float32([x0,y0])
+            ga=cv2.warpPerspective(GA1,cv2.getPerspectiveTransform(Sq,Dq),(x1-x0,y1-y0),flags=cv2.INTER_LINEAR)
         if n.startswith('mute'):
             Lo=lum(base)[...,None]; base=base*0.62+Lo*0.38; base=base*0.93
             off=base*(1-ga[...,None])+ink('mute3')*ga[...,None]
-            on=lit_from('mute2',n,ga,np.array([238,236,240],np.float32),tint=SOFT_RED,affine=True)
+            on=lit_ms(n,ga,'M')
         elif n.startswith('solo'):
             off=base*(1-ga[...,None])+ink('solo3')*ga[...,None]
-            on=lit_from('mute2',n,ga,np.array([30,34,52],np.float32),tint=SOFT_YEL,affine=True)
+            on=lit_ms(n,ga,'S')
         else:
             off=base*(1-ga[...,None])+INK_OFF*ga[...,None]
-            if n in ('layer1','loop','metroOn'): on=src          # povodne svietiace tlacidla z fotky
+            if n in ('loop','metroOn'): on=src          # povodne svietiace tlacidla z fotky
             else: on=lit_persp(n,ga,INK_LIT)
     off=np.where(m[...,None]>0,off,src); on=np.where(m[...,None]>0,on,src)
     plate[y0:y1,x0:x1]=src*(1-m[...,None])+off*m[...,None]
@@ -400,6 +431,15 @@ for side in ('L','R'):
     save_sprite(f'vu_dome_{side}',src,m)
 # ---------- 6. displej ----------
 ctl['display']={'quad':[[662.7,159.5],[1134.2,140.6],[1162.1,358.2],[689.8,379.5]]}
+# napis PHONES odstranit (ikona sluchadiel a konektor ostavaju)
+_X0,_Y0,_X1,_Y1=1436,654,1536,682
+_blk=plate[_Y0:_Y1,_X0:_X1]; _L=lum(_blk); _bl=cv2.GaussianBlur(_L,(0,0),6)
+_mk=((_bl-_L)>18).astype(np.uint8); _mk=cv2.dilate(_mk,np.ones((3,3),np.uint8),iterations=2)
+_inp=cv2.inpaint(np.clip(_blk,0,255).astype(np.uint8),_mk*255,5,cv2.INPAINT_TELEA).astype(np.float32)
+_sh=plate[_Y0-24:_Y1-24,_X0:_X1]; _hf=_sh-cv2.GaussianBlur(_sh,(0,0),2)
+_fill=cv2.GaussianBlur(_inp,(0,0),2)+_hf
+_m=cv2.GaussianBlur(_mk.astype(np.float32),(0,0),1)[...,None]
+plate[_Y0:_Y1,_X0:_X1]=_fill*_m+_blk*(1-_m)
 cv2.imwrite('/tmp/gw/plate_final.png',np.clip(plate,0,255).astype(np.uint8))
 Image.open('/tmp/gw/plate_final.png').save('/tmp/ui2/assets/panel.webp',quality=90,method=6)
 json.dump(ctl,open('/tmp/ui2/controls.json','w'),indent=1)

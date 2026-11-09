@@ -233,13 +233,13 @@ window.RAFA_CONTROLS = {
    "kind": "litgrey"
   },
   "layer1": {
-   "x": 749,
+   "x": 755,
    "y": 590,
-   "w": 89,
-   "h": 75,
+   "w": 83,
+   "h": 65,
    "off": "assets/btn_layer1_off.webp",
    "on": "assets/btn_layer1_on.webp",
-   "kind": "litgrey"
+   "kind": "grey"
   },
   "layer2": {
    "x": 833,

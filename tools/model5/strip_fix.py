@@ -54,6 +54,13 @@ keep=np.maximum(keep,slot*reg)
 for n_,b in ctl['buttons'].items():
     if n_.startswith(('mute','solo')): cv2.rectangle(keep,(b['x']-3,b['y']-3),(b['x']+b['w']+3,b['y']+b['h']+3),1,-1)
 keep=cv2.GaussianBlur(keep,(0,0),3)
+# cela oblast PAN (gombik + vsetky biele znacky + tien pod gombikom) ostava z povodnej fotky;
+# prechod do zjednotenej plochy az pod znackami, mäkko (sigma 6) v sklone konzoly
+cxs=[kn[k]['cx'] for k in ('ch1','ch2','ch3','ch4')]; cys=[kn[k]['cy'] for k in ('ch1','ch2','ch3','ch4')]
+pa,pb=np.polyfit(cxs,cys,1)
+yb=(pa*XX+pb+60).astype(np.float32)
+top=np.clip((yb-YY)/12.0+0.5,0,1).astype(np.float32)
+keep=np.maximum(keep,cv2.GaussianBlur(top,(0,0),3))
 area=cv2.GaussianBlur(reg.astype(np.float32),(0,0),4)
 w=(area*(1-np.clip(keep,0,1)))[...,None]
 res=np.clip(P*(1-w)+out*w,0,255)
