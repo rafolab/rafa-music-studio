@@ -223,6 +223,27 @@ def fix_quads():
         rx,ry,rw,rh=B[ref][:4]; x,y,w,h=B[k][:4]
         QUAD[k]=[[x+(px-rx)*w/rw, y+(py-ry)*h/rh] for px,py in QUAD[ref]]
 fix_quads()
+def fit_row(row,good):
+    A=np.array([QUAD[row[i]] for i in good],np.float32)
+    for i,k in enumerate(row):
+        QUAD[k]=[[float(np.polyval(np.polyfit(good,A[:,c,d],1),i)) for d in range(2)] for c in range(4)]
+fit_row(['layer1','layer2','layer3','layer4','layerAdd'],[2,3,4])
+def lit_persp(n,glyph,ink_col,master='layer1'):
+    """svietiaci stav: prava fotka svietiaceho '1' prenesena homografiou z presnych rohov '1'
+    na presne rohy tlacidla n (rovnaka perspektiva konzoly), maska = vlastny tvar tlacidla n"""
+    mx0,my0,_,_=crop(B[master]); x0,y0,x1,y1=crop(B[n]); sz=(x1-x0,y1-y0)
+    face=clean(master)
+    S=np.float32(QUAD[master])-np.float32([mx0,my0]); D=np.float32(QUAD[n])-np.float32([x0,y0])
+    Hm=cv2.getPerspectiveTransform(S,D)
+    w=cv2.warpPerspective(face,Hm,sz,flags=cv2.INTER_CUBIC,borderMode=cv2.BORDER_REPLICATE)
+    # maska: horna plocha + predna hrana (o ~13 % vysky nizsie), vsetko v perspektive tlacidla n
+    q=D.copy(); hgt=((q[3][1]-q[0][1])+(q[2][1]-q[1][1]))/2
+    ext=np.float32([q[0]+[-2,-2],q[1]+[2,-2],q[2]+[2,hgt*0.14],q[3]+[-2,hgt*0.14]])
+    mk=np.zeros((sz[1],sz[0]),np.uint8); cv2.fillConvexPoly(mk,np.round(ext).astype(np.int32),255)
+    mk=cv2.GaussianBlur(mk.astype(np.float32)/255,(0,0),1.2)[...,None]
+    base=warp_master(MASTER[n],n)
+    out=w*mk+base*(1-mk)
+    return np.clip(out*(1-glyph[...,None])+ink_col*glyph[...,None],0,255)
 def homo_warp(img_src,src_name,dst_name,offset_src,offset_dst,size):
     S=np.float32(QUAD[src_name])-np.float32(offset_src); D=np.float32(QUAD[dst_name])-np.float32(offset_dst)
     Hm=cv2.getPerspectiveTransform(S,D)
@@ -329,7 +350,7 @@ for n,r in B.items():
         else:
             off=base*(1-ga[...,None])+INK_OFF*ga[...,None]
             if n in ('layer1','loop','metroOn'): on=src          # povodne svietiace tlacidla z fotky
-            else: on=lit_own(n,base,ga,INK_LIT)
+            else: on=lit_persp(n,ga,INK_LIT)
     off=np.where(m[...,None]>0,off,src); on=np.where(m[...,None]>0,on,src)
     plate[y0:y1,x0:x1]=src*(1-m[...,None])+off*m[...,None]
     save_sprite(f'btn_{n}_off',off,m); save_sprite(f'btn_{n}_on',on,m)
