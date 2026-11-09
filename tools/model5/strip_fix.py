@@ -29,17 +29,23 @@ def nconv(img,m,s):
     return num/np.maximum(den,1e-4)
 m=samp.astype(np.float32)
 LF=np.dstack([nconv(P[...,c],m,4) for c in range(3)])
-# 4) hladka plocha: polynom 3. stupna z cistych vzoriek
-ys,xs=np.nonzero(samp); sel=np.random.default_rng(0).choice(len(xs),min(40000,len(xs)),replace=False); xs,ys=xs[sel],ys[sel]
-def basis(x,y):
-    x=(x-450)/300.; y=(y-600)/220.
-    return np.stack([np.ones_like(x),x,y,x*x,x*y,y*y,x**3,x*x*y,x*y*y,y**3],-1)
-A=basis(xs.astype(float),ys.astype(float))
+# 4) osvetlenie plochy = osvetlenie POVODNEJ FOTKY (bez starych jazdcov, ryziek, drazok, gombikov, M/S),
+#    takze plocha plynulo nadvazuje na oblast PAN (tien pod gombikmi, jemny prechod svetla) - bez predelu
+O=cv2.imread('/home/claude/rafa-music-studio/tools/model5/model5-original.png').astype(np.float32)
+LO=O.mean(2)
+fo=np.zeros((H,W),np.uint8)
+fo|=((LO-cv2.GaussianBlur(LO,(0,0),6))>8).astype(np.uint8)
+fo|=cv2.dilate((cv2.GaussianBlur(LO,(0,0),1)<16).astype(np.uint8),np.ones((15,15),np.uint8))   # drazky aj s ich tmavymi okrajmi
+for (x0,y0,x1,y1) in [(240,550,294,610),(373,610,432,672),(493,547,550,607),(630,613,688,673)]:   # stare jazdce + tien
+    cv2.rectangle(fo,(x0-14,y0-12),(x1+16,y1+22),1,-1)
+for k in ('ch1','ch2','ch3','ch4'):
+    c=kn[k]; cv2.circle(fo,(int(c['cx']),int(c['cy'])),30,1,-1)
+for n_,b in ctl['buttons'].items():
+    if n_.startswith(('mute','solo')): cv2.rectangle(fo,(b['x']-8,b['y']-8),(b['x']+b['w']+8,b['y']+b['h']+8),1,-1)
+fo=cv2.dilate(fo,np.ones((7,7),np.uint8))
+mo=((reg>0)&(fo==0)).astype(np.float32)
 YY,XX=np.mgrid[0:H,0:W]
-fit=np.zeros_like(P)
-for c in range(3):
-    coef,*_=np.linalg.lstsq(A,LF[ys,xs,c],rcond=None)
-    fit[...,c]=(basis(XX.astype(float),YY.astype(float))@coef)
+fit=np.dstack([nconv(O[...,c],mo,12) for c in range(3)])
 # 5) nova plocha = povodne detaily (vysoke frekvencie) + hladke osvetlenie
 # rovnaka textura vsade: mimo prvkov (znacky, drazky) len hladka plocha + jednotne jemne zrno
 featsoft=cv2.GaussianBlur(cv2.dilate(feat,np.ones((3,3),np.uint8)).astype(np.float32),(0,0),1.2)[...,None]

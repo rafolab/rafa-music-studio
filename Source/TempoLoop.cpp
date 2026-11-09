@@ -228,18 +228,123 @@ void MainComponent::checkLoopRecordingPass()
     auto loopStart = tr.getLoopRange().getStart().inSeconds();
 
     // slucka sa pretocila (LOOP OUT -> LOOP IN) = jeden prechod je nahraty.
-    // Zastavime az ~60 ms po pretoceni, aby koniec vrstvy nechybal (kompenzacia latencie);
+    // Zastavime az ~150 ms po pretoceni, aby koniec vrstvy nechybal (kompenzacia latencie);
     // Tracktion klip oreze presne na LOOP OUT a zvysok kratsi ako 0,1 s zahodi.
     if (pos < lastLoopPosition - 0.25)
         loopWrapped = true;
 
-    if (loopWrapped && pos >= loopStart + 0.06)
+    if (loopWrapped && pos >= loopStart + 0.15)
     {
         loopWrapped = false;
         finishLoopRecordingPass();
     }
 
     lastLoopPosition = pos;
+}
+
+//==============================================================================
+// Tracktion po nahravani v slucke rozdeli zaznam na "takes" po dlzke slucky, ale pocita ich od
+// ZACIATKU SUBORU. S odpocitanim (count-in) subor zacina pred LOOP IN, takze take 1 obsahuje
+// odpocitanie a klip (offset za koncom take 1) hra ticho alebo bez casti slucky (chybajuca doba).
+// Oprava: takes spojime spat do povodneho zaznamu a vyrezeme z neho presne jeden prechod slucky
+// do jedneho suboru; klip potom zacina na LOOP IN s offsetom 0 a ma presne dlzku slucky.
+bool MainComponent::flattenLoopTakes (te::WaveAudioClip& clip)
+{
+    if (edit == nullptr || ! clip.hasAnyTakes())
+        return false;
+
+    auto takesTree = clip.state.getChildWithName (te::IDs::TAKES);
+    juce::Array<juce::File> files;
+
+    for (auto t : takesTree)
+    {
+        auto f = te::SourceFileReference::findFileFromString (*edit, t[te::IDs::source].toString());
+
+        if (f.existsAsFile() && ! files.contains (f))
+            files.add (f);
+    }
+
+    if (files.isEmpty())
+        return false;
+
+    juce::AudioFormatManager fm;
+    fm.registerBasicFormats();
+
+    double sampleRate = 0.0;
+    int channels = 0, bits = 24;
+    juce::AudioBuffer<float> all;
+
+    for (auto& f : files)
+    {
+        std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
+
+        if (r == nullptr)
+            return false;
+
+        if (sampleRate <= 0.0)
+        {
+            sampleRate = r->sampleRate;
+            channels = (int) r->numChannels;
+            bits = (int) r->bitsPerSample;
+            all.setSize (channels, 0);
+        }
+
+        const int n = (int) r->lengthInSamples, old = all.getNumSamples();
+        all.setSize (channels, old + n, true, true);
+        r->read (&all, old, n, 0, true, true);
+    }
+
+    if (sampleRate <= 0.0 || channels <= 0)
+        return false;
+
+    const auto loopRange = edit->getTransport().getLoopRange();
+    const int start = (int) std::llround (clip.getPosition().getOffset().inSeconds() * sampleRate);
+    const int length = (int) std::llround (loopRange.getLength().inSeconds() * sampleRate);
+    const int available = juce::jlimit (0, length, all.getNumSamples() - start);
+
+    juce::AudioBuffer<float> pass (channels, length);
+    pass.clear();
+
+    for (int c = 0; c < channels; ++c)
+        if (available > 0)
+            pass.copyFrom (c, 0, all, c, start, available);
+
+    auto outFile = files[0].getSiblingFile (files[0].getFileNameWithoutExtension() + "_slucka")
+                           .withFileExtension ("wav").getNonexistentSibling (false);
+    {
+        juce::WavAudioFormat wav;
+        auto stream = std::make_unique<juce::FileOutputStream> (outFile);
+
+        if (! stream->openedOk())
+            return false;
+
+        std::unique_ptr<juce::AudioFormatWriter> writer (wav.createWriterFor (stream.get(), sampleRate, (unsigned int) channels,
+                                                                              juce::jlimit (16, 24, bits), {}, 0));
+        if (writer == nullptr)
+            return false;
+
+        stream.release();
+        writer->writeFromAudioSampleBuffer (pass, 0, length);
+    }
+
+    clip.clearTakes();
+    clip.getSourceFileReference().setToFile (outFile, te::SourceFileReference::PathStyle::alwaysRelative, false);
+    clip.setPosition ({ { loopRange.getStart(), loopRange.getEnd() }, te::TimeDuration() });
+
+    auto& afm = engine.getAudioFileManager();
+
+    for (auto& f : files)
+    {
+        afm.releaseFile (te::AudioFile (engine, f));
+        f.deleteFile();
+    }
+
+    afm.forceFileUpdate (te::AudioFile (engine, outFile));
+
+    if (available < length)
+        DBG ("flattenLoopTakes: chyba " << (length - available) << " vzoriek na konci");
+
+    return true;
 }
 
 //==============================================================================

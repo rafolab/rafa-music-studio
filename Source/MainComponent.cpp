@@ -199,6 +199,9 @@ MainComponent::MainComponent (te::Engine& e)
     juce::Logger::writeToLog ("2a. obrazovka vytvorena, pripajam zariadenia");
     auto& dm = engine.getDeviceManager();
     dm.addChangeListener (this);
+    dm.deviceManager.addAudioCallback (&audioWatch);
+    if (settings->containsKey ("recordOffsetMs"))
+        setRecordOffsetMs (settings->getDoubleValue ("recordOffsetMs", 0.0));
     rememberOrRestorePreferredInput (false);
     ensureMonoInputs();
     refreshInputList();
@@ -232,6 +235,7 @@ MainComponent::~MainComponent()
 {
     stopTimer();
     webView = nullptr;
+    engine.getDeviceManager().deviceManager.removeAudioCallback (&audioWatch);
     engine.getDeviceManager().removeChangeListener (this);
     detachMeter();
     detachOutputMeter();
@@ -619,6 +623,17 @@ void MainComponent::runDiagnostics()
     }
 
     auto report = Diagnostics::buildReport (engine, edit.get(), editFile);
+    {
+        const char* nl = "\r\n";
+        report << nl << "--- Vypadky zvuku (od spustenia / vynulovania) ---" << nl
+               << "Pocet: " << dropouts << ", max. vytazenie CPU zvukom: " << juce::roundToInt (cpuPeak * 100.0f) << " %"
+               << ", najdlhsia medzera medzi blokmi: " << juce::String (audioWatch.worstGapMs.load(), 1) << " ms" << nl
+               << "Rucny posun nahravok: " << juce::String (getRecordOffsetMs(), 1) << " ms, automaticka kompenzacia motora: "
+               << juce::String (engine.getDeviceManager().getRecordAdjustmentMs(), 1) << " ms" << nl;
+
+        for (auto& l : dropoutLog)
+            report << "  " << l << nl;
+    }
     auto file = Diagnostics::saveReport (report);
     juce::SystemClipboard::copyTextToClipboard (report);
 
@@ -914,6 +929,10 @@ void MainComponent::checkFinishedRecording()
                 newClip->setEnd (loopRange.getEnd(), true);
         }
 
+        // nahravanie v slucke: rozdelene "takes" spojit do jedneho celeho prechodu slucky
+        if (newClip->hasAnyTakes())
+            flattenLoopTakes (*newClip);
+
         auto file = newClip->getOriginalFile();
         auto seconds = newClip->getPosition().getLength().inSeconds();
 
@@ -1067,6 +1086,8 @@ void MainComponent::timerCallback()
     if (timerTicks % 15 == 0)
         updateDeviceInfo();
 
+    checkAudioDropouts();
+
     if (webUIActive)
     {
         if (timerTicks % 2 == 0)
@@ -1161,4 +1182,108 @@ void MainComponent::rememberOrRestorePreferredInput (bool userChange)
 
     if (err.isEmpty())
         setStatus (sk ("Vstup prepnutý na ") + preferred, RafaColours::play);
+}
+
+//==============================================================================
+// Vypadky zvuku: pocitadlo + zaznam okolnosti (pre diagnostiku praskania)
+void MainComponent::checkAudioDropouts()
+{
+    auto& dm = engine.getDeviceManager();
+    cpuPeak = juce::jmax (cpuPeak, (float) dm.getCpuUsage());
+
+    auto* dev = dm.deviceManager.getCurrentAudioDevice();
+    int newEvents = 0;
+
+    const int late = audioWatch.lateBlocks.load();
+    if (late > lastLate) newEvents += late - lastLate;
+    lastLate = late;
+
+    if (dev != nullptr)
+    {
+        const int x = dev->getXRunCount();   // ASIO / DirectSound; WASAPI vracia -1
+        if (x >= 0)
+        {
+            if (lastXruns >= 0 && x > lastXruns) newEvents = juce::jmax (newEvents, x - lastXruns);
+            lastXruns = x;
+        }
+    }
+
+    if (newEvents <= 0)
+        return;
+
+    dropouts += newEvents;
+
+    juce::String ctx;
+    ctx << juce::Time::getCurrentTime().formatted ("%H:%M:%S") << "  +" << newEvents
+        << "  CPU " << juce::roundToInt (dm.getCpuUsage() * 100.0f) << " % (max " << juce::roundToInt (cpuPeak * 100.0f) << " %)"
+        << "  najdlhsia medzera " << juce::String (audioWatch.worstGapMs.load(), 1) << " ms";
+
+    if (dev != nullptr)
+        ctx << "  buffer " << dev->getCurrentBufferSizeSamples() << " @ " << juce::roundToInt (dev->getCurrentSampleRate()) << " Hz";
+
+    if (edit != nullptr)
+    {
+        auto& tr = edit->getTransport();
+        ctx << "  stopy " << te::getAudioTracks (*edit).size()
+            << (tr.isRecording() ? "  NAHRAVA" : tr.isPlaying() ? "  HRA" : "  stoji")
+            << (tr.looping ? "  LOOP" : "");
+    }
+
+    dropoutLog.add (ctx);
+    while (dropoutLog.size() > 60) dropoutLog.remove (0);
+    juce::Logger::writeToLog ("Vypadok zvuku: " + ctx);
+
+    static juce::uint32 lastWarn = 0;
+    const auto nowMs = juce::Time::getMillisecondCounter();
+
+    if ((edit == nullptr || ! edit->getTransport().isRecording()) && nowMs - lastWarn > 20000)
+    {
+        lastWarn = nowMs;
+        setStatus (sk ("Výpadok zvuku (spolu ") + juce::String (dropouts)
+                     + sk ("). Ak počuť praskanie, zvoľ v SETTINGS väčší Buffer."), RafaColours::accent);
+    }
+}
+
+void MainComponent::resetAudioDropouts()
+{
+    dropouts = 0; cpuPeak = 0.0f; dropoutLog.clear();
+    audioWatch.worstGapMs.store (0.0);
+    setStatus (sk ("Počítadlo výpadkov zvuku vynulované."), RafaColours::play);
+}
+
+void MainComponent::setBufferSize (int samples)
+{
+    if (edit != nullptr && edit->getTransport().isRecording())
+        return;
+
+    auto& adm = engine.getDeviceManager().deviceManager;
+    auto setup = adm.getAudioDeviceSetup();
+    setup.bufferSize = samples;
+    auto err = adm.setAudioDeviceSetup (setup, true);
+
+    if (err.isNotEmpty())
+        setStatus (sk ("Buffer sa nedá zmeniť: ") + err, RafaColours::accent);
+    else if (auto* dev = adm.getCurrentAudioDevice())
+        setStatus (sk ("Buffer: ") + juce::String (dev->getCurrentBufferSizeSamples()) + sk (" vzoriek (")
+                     + juce::String (dev->getCurrentBufferSizeSamples() * 1000.0 / juce::jmax (1.0, dev->getCurrentSampleRate()), 1)
+                     + sk (" ms). Ak praská, zvoľ väčší."), RafaColours::play);
+}
+
+// rucny posun nahravok (ms) pre vsetky vstupy - jemne doladenie synchronizacie vrstiev
+void MainComponent::setRecordOffsetMs (double ms)
+{
+    ms = juce::jlimit (-200.0, 200.0, ms);
+    auto& dm = engine.getDeviceManager();
+
+    for (int i = 0; i < dm.getNumWaveInDevices(); ++i)
+        if (auto* w = dm.getWaveInDevice (i))
+            w->setRecordAdjustmentMs (ms);
+
+    settings->setValue ("recordOffsetMs", ms);
+    settings->saveIfNeeded();
+}
+
+double MainComponent::getRecordOffsetMs() const
+{
+    return settings->getDoubleValue ("recordOffsetMs", 0.0);
 }

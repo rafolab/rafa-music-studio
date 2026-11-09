@@ -221,6 +221,9 @@ void MainComponent::handleWebCommand (const juce::var& message)
     else if (command == "exportMix")         { if (! edit->getTransport().isRecording()) exportMix(); }
     else if (command == "openAudioSettings") { if (edit == nullptr || ! edit->getTransport().isRecording()) showAudioSettings(); }
     else if (command == "runDiagnostics")    runDiagnostics();
+    else if (command == "setBufferSize")     setBufferSize ((int) args.getProperty ("samples", 512));
+    else if (command == "setRecordOffset")   { if (! edit->getTransport().isRecording()) setRecordOffsetMs ((double) args.getProperty ("ms", 0.0)); }
+    else if (command == "resetDropouts")     resetAudioDropouts();
     // --- API v2: tempo, metronom, LOOP ---
     else if (command == "setTempo")           setTempoBpm ((double) args.getProperty ("bpm", 120.0));
     else if (command == "setTimeSignature")   setTimeSignature ((int) args.getProperty ("numerator", 4), (int) args.getProperty ("denominator", 4));
@@ -347,6 +350,12 @@ juce::var MainComponent::buildStateObject()
         device->setProperty ("output", setup.outputDeviceName.isNotEmpty() ? setup.outputDeviceName : dev->getName());
         device->setProperty ("sampleRate", sr);
         device->setProperty ("buffer", dev->getCurrentBufferSizeSamples());
+        {
+            juce::Array<juce::var> sizes;
+            for (auto b : dev->getAvailableBufferSizes())
+                if (b >= 64 && b <= 4096) sizes.add (b);
+            device->setProperty ("bufferSizes", sizes);
+        }
         device->setProperty ("latencyMs", sr > 0 ? juce::roundToInt ((double) totalSamples * 10000.0 / sr) / 10.0 : 0.0);
     }
     else
@@ -361,6 +370,10 @@ juce::var MainComponent::buildStateObject()
     }
 
     device->setProperty ("cpu", juce::roundToInt (dm.getCpuUsage() * 100.0f));
+    device->setProperty ("cpuPeak", juce::roundToInt (cpuPeak * 100.0f));
+    device->setProperty ("dropouts", dropouts);
+    device->setProperty ("recordOffsetMs", getRecordOffsetMs());
+    device->setProperty ("autoCompMs", juce::roundToInt (dm.getRecordAdjustmentMs() * 10.0) / 10.0);
     obj->setProperty ("device", device.release());
 
     auto status = std::make_unique<juce::DynamicObject>();

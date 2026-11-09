@@ -124,9 +124,12 @@
   function selectLayer (i) {
     const t = trackAt(i);
     if (!t) { flashValue("Kanál " + (page * 4 + i + 1) + " je prázdny – nahraj vrstvu cez REC"); return; }
+    if (t.id === selectedId()) {   // svietiace tlacidlo = aktivna stopa; vypina sa vyberom inej stopy
+      flashValue("Stopa " + (page * 4 + i + 1) + " je AKTÍVNA – svieti, kým nevyberieš inú stopu", 2600); return;
+    }
     localSel = t.id;
     if (has(4)) send("selectTrack", { trackId: t.id });
-    flashValue("Vybraná vrstva: " + t.name);
+    flashValue("Aktívna stopa: " + (page * 4 + i + 1) + " – " + t.name, 1800);
     render();
   }
 
@@ -260,6 +263,7 @@
   }
   // stlačenie DATA: v menu vyberie položku, inak otvorí rýchly výber vrstvy
   function jogPress () {
+    if (textDlg) { textDlg.submit(); return; }
     if (menu) { menuEnter(); return; }
     if (!tracks.length) { flashValue("Zatiaľ žiadna vrstva"); return; }
     const items = tracks.map((x, i) => ({ t: (i + 1) + "  " + x.name, act: () => { localSel = x.id; page = Math.floor(i / 4); if (has(4)) send("selectTrack", { trackId: x.id }); flashValue("Vybraná vrstva: " + x.name); } }));
@@ -282,7 +286,7 @@
   const tToDb = (t) => { t = clamp(t, 0, 1); for (let i = 1; i < DB_T.length; i++) { const [d0, t0] = DB_T[i - 1], [d1, t1] = DB_T[i]; if (t <= t1) return d0 - (d0 - d1) * (t - t0) / (t1 - t0); } return -100; };
   const F = {};
   for (const [id, f] of Object.entries(C.faders)) {
-    const img = el("img", "spr", spritesEl, { left: px(f.x), top: px(f.y), width: px(f.w), height: px(f.h) }); img.src = f.sprite;
+    const img = el("img", "spr fader-spr", spritesEl, { left: px(f.x), top: px(f.y), width: px(f.w), height: px(f.h) }); img.src = f.sprite;
     const y6 = f.marks["6"], yInf = f.marks["-100"];
     const o = { f, img, y6, yInf, local: null, until: 0, i: f.track };
     const cx = f.x + f.w / 2;
@@ -307,14 +311,14 @@
     };
     hit.addEventListener("pointerdown", (ev) => {
       if (ev.button !== 0) return; if (!trackAt(o.i)) { flashValue("Kanál je prázdny"); return; }
-      hit.setPointerCapture(ev.pointerId); startY = ev.clientY; startT = dbToT(faderDb(o)); hold.fader = o;
+      hit.setPointerCapture(ev.pointerId); startY = ev.clientY; startT = dbToT(faderDb(o)); hold.fader = o; o.img.classList.add("drag");
     });
     hit.addEventListener("pointermove", (ev) => {
       if (hold.fader !== o) return;
       const dy = (ev.clientY - startY) / scale / (o.yInf - o.y6) * (ev.shiftKey ? 0.2 : 1);
       apply(tToDb(startT + dy), false);
     });
-    const end = () => { if (hold.fader === o) { hold.fader = null; apply(o.local ?? faderDb(o), true); } };
+    const end = () => { o.img.classList.remove("drag"); if (hold.fader === o) { hold.fader = null; apply(o.local ?? faderDb(o), true); } };
     hit.addEventListener("pointerup", end); hit.addEventListener("pointercancel", end);
     hit.addEventListener("wheel", (ev) => { ev.preventDefault(); if (!trackAt(o.i)) return; const cur = Math.max(-60, faderDb(o)); apply(clamp(cur + (ev.deltaY < 0 ? 1 : -1), -60, 6), true); }, { passive: false });
     hit.addEventListener("dblclick", () => { if (trackAt(o.i)) apply(0, true); });
@@ -436,6 +440,7 @@
     $("#dLength").textContent = "/ " + fmtShort((st.song && st.song.length) || 0);
     // vrstvy
     const sel = selectedId();
+    { const ai = tracks.findIndex(x => x.id === sel); $("#dActive").textContent = ai >= 0 ? "AKTÍVNA STOPA " + (ai + 1) : ""; }
     for (let i = 0; i < 4; i++) {
       const tr = trackAt(i), le = laneEls[i];
       le.lane.style.display = tr ? "flex" : "none";
@@ -459,7 +464,7 @@
 
   // ------------------------------------------------------------------ MENU na displeji
   let menu = null;  // { id, title, items:[{t, act, dis, sub}], sel, parent }
-  let lastMenuHtml = "";
+  let lastMenuHtml = "", lastMenuTitle = "", menuShownAt = 0;
   const menuEl = $("#dMenu");
   const LOOP_BARS = [1, 2, 4, 8, 16];
   const isDraftWithTakes = () => st && st.song && st.song.isDraft && st.song.hasRecordings;
@@ -468,7 +473,7 @@
   function leaveSong (thenAct, thenOpenPath) {
     if (!isDraftWithTakes()) { thenAct(); return; }
     openMenu({ id: "leave", title: "SKLADBA NIE JE POMENOVANÁ", items: [
-      { t: "Uložiť ako…", act: () => askText("NÁZOV SKLADBY", "", (name) => { send("saveSongAs", { name }); afterSave(thenAct); }) },
+      { t: "Uložiť ako…", act: () => saveAs("NÁZOV SKLADBY", "", thenAct) },
       { t: "Zahodiť (do koša Windows)", act: () => thenOpenPath === "new" ? send("discardSong", {}) : send("discardSong", { thenOpen: thenOpenPath || "" }) },
       { t: "Zrušiť", act: () => {} } ] });
   }
@@ -491,12 +496,15 @@
     const t = selectedTrack();
     const h = (st && st.history) || {};
     const draft = st && st.song && st.song.isDraft;
+    const dev = (st && st.device) || {};
+    const bufMs = (b) => dev.sampleRate ? (b * 1000 / dev.sampleRate).toFixed(1).replace(".", ",") + " ms" : "";
+    const fmtOffset = (ms) => (ms > 0 ? "+" : "") + ms + " ms";
     const M = {
       project: { title: "PROJECT", items: [
         { t: "Nová skladba", act: () => leaveSong(() => send("newSong"), "new"), dis: !editing },
         { t: "Otvoriť skladbu…", act: () => withSongList(showSongList), dis: !editing },
-        { t: draft ? "Uložiť skladbu… (pomenovať)" : "Uložiť skladbu", act: () => draft ? askText("NÁZOV SKLADBY", "", (n) => send("saveSongAs", { name: n })) : send("saveSong"), dis: rec() },
-        { t: "Uložiť ako…", act: () => askText("NÁZOV SKLADBY", draft ? "" : (st.song.name + " 2"), (n) => send("saveSongAs", { name: n })), dis: rec() },
+        { t: draft ? "Uložiť skladbu… (pomenovať)" : "Uložiť skladbu", act: () => draft ? saveAs("NÁZOV SKLADBY", "") : (send("saveSong"), flashValue("Uložené: " + st.song.name, 2200)), dis: rec() },
+        { t: "Uložiť ako…", act: () => saveAs("NÁZOV SKLADBY", draft ? "" : (st.song.name + " 2")), dis: rec() },
         { t: "Exportovať mix (WAV)", act: () => send("exportMix"), dis: !editing },
         { t: "Exportovať stopy (WAV pre Sonar)", act: () => send("exportTracks"), dis: !editing || !has(5) },
         { t: "Otvoriť priečinok exportu", act: () => send("openExportFolder"), dis: !has(5) },
@@ -521,6 +529,9 @@
         { t: "Dĺžka slučky…", act: () => openLoopLen(), dis: rec() },
         { t: "Metrum…", sub: () => [[2, 4], [3, 4], [4, 4], [5, 4], [6, 8], [7, 8]].map(([n, d]) => ({ t: n + "/" + d, act: () => send("setTimeSignature", { numerator: n, denominator: d }) })), dis: rec() },
         { t: "Odpočítanie…", sub: () => [0, 1, 2].map(b => ({ t: b === 0 ? "bez odpočítania" : b + (b === 1 ? " takt" : " takty"), act: () => send("setCountIn", { bars: b }) })) },
+        { t: "Buffer (praskanie): " + (dev.buffer ? dev.buffer + " vzoriek · " + bufMs(dev.buffer) : "–") + "…", sub: () => (dev.bufferSizes || []).map(b => ({ t: (b === dev.buffer ? "● " : "  ") + b + " vzoriek · " + bufMs(b) + (b >= 512 && b <= 1024 ? "  (bezpečné)" : b < 256 ? "  (nízka odozva, riziko praskania)" : ""), act: () => send("setBufferSize", { samples: b }) })), dis: rec() || !(dev.bufferSizes && dev.bufferSizes.length) },
+        { t: "Posun nahrávky: " + fmtOffset(dev.recordOffsetMs || 0) + "…", sub: () => [-50, -40, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 40, 50].map(ms => ({ t: (Math.round(dev.recordOffsetMs || 0) === ms ? "● " : "  ") + fmtOffset(ms) + (ms === 0 ? "  (predvolené)" : ms > 0 ? "  (nahrávka sa posunie skôr)" : "  (nahrávka sa posunie neskôr)"), act: () => send("setRecordOffset", { ms }) })), dis: rec() },
+        { t: "Výpadky zvuku: " + (dev.dropouts || 0) + " · CPU max " + (dev.cpuPeak || 0) + " % (vynulovať)", act: () => send("resetDropouts"), keep: true },
         { t: "Diagnostika", act: () => send("runDiagnostics"), dis: !(st && st.busy && st.busy.diagnosticsAllowed !== false) } ] },
     };
     return Object.assign({ id, sel: 0 }, M[id]);
@@ -566,7 +577,7 @@
     openMenu({ id: "confirm", title, note: text, items: [ { t: "Áno", act: yes }, { t: "Nie", act: () => {} } ] });
     menu.sel = 1; drawMenu();
   }
-  function closeMenu () { menu = null; menuEl.hidden = true; lastMenuHtml = ""; render(); }
+  function closeMenu () { menu = null; textDlg = null; menuEl.hidden = true; lastMenuHtml = ""; render(); }
   function drawMenuQuiet () { const r = render; render = () => {}; drawMenu(); render = r; }
   const MENU_ROWS = 5;
   function drawMenu () {
@@ -581,17 +592,21 @@
       return `<div class="mi${it.dis ? " dis" : ""}" data-i="${i}">${escapeHtml(it.t)}</div>`; }).join("");
     const html = "<h4>" + escapeHtml(menu.title) + (n > MENU_ROWS ? `<span class="pos">${menu.sel + 1}/${n}</span>` : "") + "</h4>" +
       (menu.note ? `<div class="note">${escapeHtml(menu.note)}</div>` : "") + rows +
-      `<div class="hint">DATA / koliesko = pohyb · dvojklik, Enter alebo stlačenie DATA = potvrdiť · ${menu.parent ? "Esc = späť" : "tlačidlo = zavrieť"}</div>`;
+      `<div class="hint">myš / koliesko / DATA = výber · klik, Enter alebo stlačenie DATA = potvrdiť · ${menu.parent ? "Esc = späť" : "tlačidlo = zavrieť"}</div>`;
     // DOM menime len ked sa obsah naozaj zmenil – inak by sa klik / dvojklik "stratil" pri obnove 15× za sekundu
-    if (html !== lastMenuHtml || !menuEl.firstChild) { menuEl.innerHTML = html; lastMenuHtml = html; }
+    if (html !== lastMenuHtml || !menuEl.firstChild) { if (!lastMenuHtml || menu.title !== lastMenuTitle) menuShownAt = performance.now(); menuEl.innerHTML = html; lastMenuHtml = html; lastMenuTitle = menu.title; }
     // zvyraznenie vyberu bez prestavby DOM (dvojklik tak trafi tu istu polozku)
     menuEl.querySelectorAll(".mi").forEach(e => e.classList.toggle("sel", +e.dataset.i === menu.sel));
     render();
   }
   // mys: klik = vybrat polozku, dvojklik = potvrdit (ako Enter alebo stlacenie DATA)
   const itemAt = (ev) => { const e = ev.target.closest && ev.target.closest(".mi"); return e ? +e.dataset.i : -1; };
-  menuEl.addEventListener("click", (ev) => { const i = itemAt(ev); if (i >= 0 && menu && menu.sel !== i) { menu.sel = i; drawMenu(); } });
-  menuEl.addEventListener("dblclick", (ev) => { const i = itemAt(ev); if (i >= 0 && menu) { menu.sel = i; menuEnter(); } });
+  // kurzor mysi presuva sipku vyberu (bez prestavby DOM), jeden klik polozku potvrdi
+  const markSel = () => menuEl.querySelectorAll(".mi").forEach(e => e.classList.toggle("sel", +e.dataset.i === menu.sel));
+  menuEl.addEventListener("mousemove", (ev) => { const i = itemAt(ev); if (i >= 0 && menu && menu.items.length && menu.sel !== i && !menu.items[i].dis) { menu.sel = i; markSel(); } });
+  // ochrana pred dvojklikom: druhy klik hned po otvoreni noveho menu / okna sa ignoruje
+  const tooSoon = () => performance.now() - menuShownAt < 400;
+  menuEl.addEventListener("click", (ev) => { const i = itemAt(ev); if (i >= 0 && menu && menu.items[i] && !menu.items[i].dis && !tooSoon()) { menu.sel = i; markSel(); menuEnter(); } });
   // koliesko: vzdy presne o jednu polozku (aj pri touchpade, ktory posiela vela malych udalosti)
   const wheelStep = (() => { let acc = 0, last = 0; return (ev) => {
     const now = performance.now(); if (now - last > 250) acc = 0;
@@ -611,16 +626,53 @@
   function menuBack () { if (menu && menu.parent) { menu = menu.parent; drawMenu(); } else closeMenu(); }
 
   // textove pole na displeji (premenovanie stopy, nazov skladby)
-  function askText (title, value, done) {
+  // textove pole na displeji (premenovanie stopy, nazov skladby)
+  // potvrdenie: tlacidlo ULOŽIŤ (mys), Enter alebo stlacenie DATA; zrusenie: ZRUŠIŤ alebo Esc
+  let textDlg = null;
+  function askText (title, value, done, okLabel) {
     menuEl.hidden = false;
     lastMenuHtml = "";
-    menuEl.innerHTML = `<h4>${escapeHtml(title)}</h4><input id="dText" maxlength="60" class="d-input" value="${escapeHtml(value)}"><div class="hint">Enter = uložiť · Esc = zrušiť</div>`;
-    menu = { id: "text", title: "", items: [], sel: 0 };
-    const inp = $("#dText"); setTimeout(() => { inp.focus(); inp.select(); }, 0);
+    menuEl.innerHTML = `<h4>${escapeHtml(title)}</h4><form id="dTextForm" autocomplete="off"><input id="dText" maxlength="60" class="d-input" value="${escapeHtml(value)}">` +
+      `<div class="d-btns"><button type="submit" class="d-btn ok">${escapeHtml(okLabel || "ULOŽIŤ")}</button><button type="button" class="d-btn cancel">ZRUŠIŤ</button></div></form>` +
+      `<div class="hint">Enter, ULOŽIŤ alebo stlačenie DATA = potvrdiť · Esc = zrušiť</div>`;
+    menu = { id: "text", title: "", items: [], sel: 0 }; menuShownAt = performance.now();
+    const inp = $("#dText"), form = $("#dTextForm");
+    const submit = () => {
+      const v = inp.value.trim();
+      if (!v) { inp.focus(); flashValue("Najprv napíš názov", 1600); return; }
+      textDlg = null; closeMenu(); done(v);
+    };
+    const cancel = () => { textDlg = null; closeMenu(); };
+    textDlg = { submit, cancel };
+    form.addEventListener("submit", (ev) => { ev.preventDefault(); if (ev.submitter && tooSoon()) return; submit(); });
+    form.querySelector(".cancel").addEventListener("click", (ev) => { ev.preventDefault(); if (!tooSoon()) cancel(); });
+    form.addEventListener("click", (ev) => ev.stopPropagation());
+    setTimeout(() => { inp.focus(); inp.select(); }, 0);
     inp.addEventListener("keydown", (ev) => {
       ev.stopPropagation();
-      if (ev.key === "Enter") { const v = inp.value.trim(); closeMenu(); if (v) done(v); }
-      if (ev.key === "Escape") closeMenu();
+      if (ev.key === "Enter" || ev.keyCode === 13) { ev.preventDefault(); submit(); }
+      else if (ev.key === "Escape") { ev.preventDefault(); cancel(); }
+    });
+  }
+  // ulozenie skladby pod menom: po odoslani overi, ci motor naozaj ulozil; pri chybe sa okno otvori znova s tym istym nazvom
+  function saveAs (title, initial, thenAct) {
+    askText(title, initial, (name) => {
+      const before = st && st.song ? st.song.folder + "|" + st.song.name : "";
+      const stBefore = st && st.status ? st.status.text : "";
+      send("saveSongAs", { name });
+      flashValue("Ukladám „" + name + "“…", 4000);
+      const t0 = performance.now();
+      const tick = () => {
+        const now = st && st.song ? st.song.folder + "|" + st.song.name : "";
+        if (now !== before && st.song && !st.song.isDraft) { flashValue("Uložené: " + st.song.name, 2600); if (thenAct) thenAct(); return; }
+        const sx = st && st.status ? st.status.text : "";
+        if (sx && sx !== stBefore && st.status.level !== "ok" && st.status.level !== "info") {
+          flashValue(sx, 3500); setTimeout(() => saveAs(title, name, thenAct), 1200); return;
+        }
+        if (performance.now() - t0 < 5000) setTimeout(tick, 100);
+        else flashValue("Skladba sa neuložila – skús to znova", 3500);
+      };
+      setTimeout(tick, 150);
     });
   }
   function renameTrack (tr) {
@@ -756,6 +808,9 @@
           loopR = pnl.querySelector(".tp-loop"), headR = pnl.querySelector(".tp-head-line"), foot = pnl.querySelector(".tp-foot");
     const NAME_W = 210;
     let open = false, rowEls = new Map(), marksSig = "";
+    // vyska jednotlivych stop (px): ↕ prepina 1× / 2× / 4×, spodny okraj riadku sa da potiahnut
+    const ROW_H = 44, rowH = new Map();
+    const hOf = (id) => rowH.get(id) || ROW_H;
     // ZOOM: viditelne okno casu [vStart, vStart + vLen]
     let zoom = 1, vStart = 0;
     const vLen = () => viewLength / zoom;
@@ -814,9 +869,9 @@
       if (zoom > 1 && st && st.transport && st.transport.playing && (x > 0.92 || x < 0)) { vStart = p - vLen() * 0.1; clampView(); marksSig = ""; for (const r of rowEls.values()) r.sig = ""; update(false); }
     }
     function drawRow (r, t, w) {
-      const sig = t.id + ":" + t.clips.map(c => c.start + "/" + c.length + "/" + (c.peaks ? c.peaks.length : 0)).join(",") + ":" + viewLength + ":" + w + ":" + vStart.toFixed(3) + ":" + zoom;
+      const sig = t.id + ":" + hOf(t.id) + ":" + t.clips.map(c => c.start + "/" + c.length + "/" + (c.peaks ? c.peaks.length : 0)).join(",") + ":" + viewLength + ":" + w + ":" + vStart.toFixed(3) + ":" + zoom;
       if (r.sig === sig) return; r.sig = sig;
-      const cv = r.cv, dpr = 2; cv.width = w * dpr; cv.height = 40 * dpr; cv.style.width = px(w);
+      const hh = hOf(t.id) - 4, cv = r.cv, dpr = 2; cv.width = w * dpr; cv.height = hh * dpr; cv.style.width = px(w); cv.style.height = px(hh);
       const g = cv.getContext("2d"); g.clearRect(0, 0, cv.width, cv.height);
       const sx = cv.width / vLen(), mid = cv.height / 2;
       for (const c of t.clips) {
@@ -863,10 +918,21 @@
         let r = rowEls.get(tr.id);
         if (!r) {
           const row = el("div", "tp-row", rowsEl);
-          row.innerHTML = `<div class="tp-name"><span class="n"></span><span class="nm"></span><span class="ms"><button class="m">M</button><button class="s">S</button></span></div><div class="tp-wave"><canvas></canvas></div>`;
-          r = { row, cv: row.querySelector("canvas"), nm: row.querySelector(".nm"), n: row.querySelector(".n"), m: row.querySelector(".m"), s: row.querySelector(".s"), sig: "" };
+          row.innerHTML = `<div class="tp-name"><span class="n"></span><span class="nm"></span><span class="ms"><button class="hz" title="Výška stopy: klik = 1× / 2× / 4×, alebo potiahni spodný okraj stopy">↕</button><button class="m">M</button><button class="s">S</button></span></div><div class="tp-wave"><canvas></canvas></div><div class="tp-grip" title="Potiahni = výška stopy"></div>`;
+          r = { row, cv: row.querySelector("canvas"), nm: row.querySelector(".nm"), n: row.querySelector(".n"), m: row.querySelector(".m"), s: row.querySelector(".s"), wave: row.querySelector(".tp-wave"), sig: "" };
+          const setH = (h) => { rowH.set(tr.id, clamp(Math.round(h), ROW_H, 260)); r.sig = ""; update(false); layout(); };
+          row.querySelector(".hz").addEventListener("click", () => { const h = hOf(tr.id); setH(h < ROW_H * 2 ? ROW_H * 2 : h < ROW_H * 4 ? ROW_H * 4 : ROW_H); });
+          const grip = row.querySelector(".tp-grip");
+          grip.addEventListener("pointerdown", (ev) => {
+            ev.preventDefault(); ev.stopPropagation(); grip.setPointerCapture(ev.pointerId);
+            const y0 = ev.clientY, h0 = hOf(tr.id), sc = row.getBoundingClientRect().height / h0 || 1;
+            const mv = (e) => setH(h0 + (e.clientY - y0) / sc);
+            const upH = () => { grip.removeEventListener("pointermove", mv); grip.removeEventListener("pointerup", upH); };
+            grip.addEventListener("pointermove", mv); grip.addEventListener("pointerup", upH);
+          });
+          grip.addEventListener("click", (ev) => ev.stopPropagation());
           row.addEventListener("click", (ev) => {
-            if (ev.target.tagName === "BUTTON") return;
+            if (ev.target.tagName === "BUTTON" || ev.target.classList.contains("tp-grip")) return;
             pickTrack(tracks.find(x => x.id === tr.id) || tr);
             if (ev.target.closest(".tp-wave")) seekTo(timeAtX(ev.clientX));
           });
@@ -877,13 +943,14 @@
         }
         if (rowsEl.children[i] !== r.row) rowsEl.insertBefore(r.row, rowsEl.children[i] || null);
         r.n.textContent = i + 1; r.nm.textContent = tr.name;
+        { const hh = hOf(tr.id); r.row.style.height = px(hh); r.wave.style.height = px(hh - 4); r.row.classList.toggle("tall", hh > ROW_H); }
         r.row.classList.toggle("sel", tr.id === sel); r.row.classList.toggle("rec", !!tr.recording);
         r.row.classList.toggle("quiet", !!tr.muted || (anySolo && !tr.solo));
         r.m.classList.toggle("on", !!tr.muted); r.s.classList.toggle("on", !!tr.solo);
         drawRow(r, tr, w);
       });
       for (const [id, r] of rowEls) if (!seen.has(id)) { r.row.remove(); rowEls.delete(id); }
-      foot.textContent = tracks.length ? "Klik do vlny = vybrať stopu a presunúť hlavu · dvojklik na názov = premenovať · Ctrl + koliesko = ZOOM, koliesko = posun · Ctrl+Z / Ctrl+Y = vrátiť / obnoviť"
+      foot.textContent = tracks.length ? "Klik do vlny = vybrať stopu a presunúť hlavu · ↕ alebo potiahnutie spodného okraja = výška stopy · dvojklik na názov = premenovať · Ctrl + koliesko = ZOOM, koliesko = posun · Ctrl+Z / Ctrl+Y = vrátiť / obnoviť"
                                        : "Zatiaľ žiadna stopa – stlač REC na konzole.";
       if (force) layout();
     }

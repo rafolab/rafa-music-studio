@@ -20,7 +20,11 @@ for n in ('ch1','ch2','ch3','ch4','metro'):
     k=kn[n]; cx,cy=k['cx'],k['cy']; rx=min(k['w'],k['h'])/2; ry=rx
     x0,x1=int(cx-6),int(cx+7); y0,y1=int(cy-max(k['w'],k['h'])/2-2),int(cy-3)
     reg=lum(plate[y0:y1,x0:x1]); m=(reg<110).astype(np.uint8)
-    mask[y0:y1,x0:x1]|=cv2.dilate(m,np.ones((3,3),np.uint8),iterations=1)
+    m=cv2.dilate(m,np.ones((3,3),np.uint8),iterations=1)
+    # len vnutri striebornej hlavy gombika (inak sa "vymaluje" aj tmava medzera nad nim = biela skvrna)
+    YY_,XX_=np.mgrid[y0:y1,x0:x1]
+    inside=(((XX_-cx)/(k['w']/2*0.80))**2+((YY_-cy)/(k['h']/2*0.80))**2)<=1
+    mask[y0:y1,x0:x1]|=(m*inside).astype(np.uint8)
 plate=cv2.inpaint(plate.astype(np.uint8),mask*255,4,cv2.INPAINT_TELEA).astype(np.float32)
 # elipsa: pre kreslenie rysky (os X a Y), uhol zobrazenia ignorujeme (male naklonenie)
 for n,k in kn.items():
@@ -133,16 +137,16 @@ for n,f in F.items():
     S=(x0-8,y0-10,x1+12,y1+20)
     o=orig_plate[S[1]:S[3],S[0]:S[2]]; r=plate[S[1]:S[3],S[0]:S[2]]
     inner=np.zeros(o.shape[:2],np.float32); inner[(y0-S[1])+1:(y1-S[1]),(x0-S[0])+1:(x1-S[0])-1]=1
-    edge=cv2.dilate(inner,np.ones((5,5),np.uint8))
-    d=np.abs(o-r).max(2); al_edge=np.clip((d-14)/30,0,1)*edge
-    dark=np.clip((lum(r)-lum(o)),0,None); dark=cv2.GaussianBlur(dark,(0,0),3)
-    shadow=np.clip(dark/max(1,lum(r).mean()),0,0.85)
-    ring=cv2.GaussianBlur(cv2.dilate(inner,np.ones((21,21),np.uint8)),(0,0),3)
-    al=np.maximum(np.maximum(inner,al_edge),shadow*ring)
-    col=np.where(inner[...,None]>0.5,o,o*0+np.where((al_edge>0)[...,None],o,0))
-    # jazdec bez farebneho nadychu od povodne svietiaceho M (fader 2 bol oranzovy)
-    oL=lum(o)[...,None]; o=o*0.35+np.repeat(oL,3,2)*0.65
-    save_sprite(f'fader_{n}',np.where((inner+al_edge)[...,None]>0,o,np.zeros_like(o)),al)
+    # sprite = len samotna hlavicka (mäkka hrana 0,7 px) + umely polopriehladny tien dole/vpravo.
+    # Ziadne kusky povodneho pozadia: biele ryzky stupnice ostavaju pod jazdcom viditelne.
+    capA=cv2.GaussianBlur(inner,(0,0),0.7)
+    sh=np.zeros_like(inner); hh_,ww_=inner.shape
+    M_=np.float32([[1,0,2],[0,1,4]]); sh=cv2.warpAffine(cv2.dilate(inner,np.ones((3,3),np.uint8)),M_,(ww_,hh_))
+    sh=cv2.GaussianBlur(sh,(0,0),3.5)*0.42
+    al=np.clip(capA+sh*(1-capA),0,1)
+    oL=lum(o)[...,None]; o=o*0.35+np.repeat(oL,3,2)*0.65          # bez farebneho nadychu
+    colr=o*capA[...,None]/np.maximum(al,1e-3)[...,None]            # tien je cierny
+    save_sprite(f'fader_{n}',colr,al)
     ctl['faders'][n]={'sprite':f'assets/fader_{n}.webp','x':S[0],'y':S[1],'w':S[2]-S[0],'h':S[3]-S[1],
         'grooveY':f['groove'],'slant':round(slant,4),'marks':{str(k):v for k,v in f['marks'].items()},
         'track':int(n[1])-1}
@@ -431,15 +435,25 @@ for side in ('L','R'):
     save_sprite(f'vu_dome_{side}',src,m)
 # ---------- 6. displej ----------
 ctl['display']={'quad':[[662.7,159.5],[1134.2,140.6],[1162.1,358.2],[689.8,379.5]]}
-# napis PHONES odstranit (ikona sluchadiel a konektor ostavaju)
-_X0,_Y0,_X1,_Y1=1436,654,1536,682
-_blk=plate[_Y0:_Y1,_X0:_X1]; _L=lum(_blk); _bl=cv2.GaussianBlur(_L,(0,0),6)
-_mk=((_bl-_L)>18).astype(np.uint8); _mk=cv2.dilate(_mk,np.ones((3,3),np.uint8),iterations=2)
-_inp=cv2.inpaint(np.clip(_blk,0,255).astype(np.uint8),_mk*255,5,cv2.INPAINT_TELEA).astype(np.float32)
-_sh=plate[_Y0-24:_Y1-24,_X0:_X1]; _hf=_sh-cv2.GaussianBlur(_sh,(0,0),2)
-_fill=cv2.GaussianBlur(_inp,(0,0),2)+_hf
-_m=cv2.GaussianBlur(_mk.astype(np.float32),(0,0),1)[...,None]
-plate[_Y0:_Y1,_X0:_X1]=_fill*_m+_blk*(1-_m)
+# napis PHONES odstranit (ikona sluchadiel a konektor ostavaju). Hlinik je kartacovany vodorovne,
+# preto kazdy riadok doplnime z toho isteho riadku vlavo a vpravo od napisu (+ jeho vlastne zrno).
+_X0,_Y0,_X1,_Y1=1428,655,1546,678
+_blk=plate[_Y0:_Y1,_X0:_X1].copy(); _L=lum(_blk); _bl=cv2.GaussianBlur(_L,(0,0),5)
+_mk=((_bl-_L)>12).astype(np.uint8); _mk=cv2.dilate(_mk,np.ones((3,5),np.uint8),iterations=1)
+_mk[:, :6]=0; _mk[:, -6:]=0
+_rng=np.random.default_rng(3)
+for _r in range(_blk.shape[0]):
+    m_=_mk[_r]>0
+    if not m_.any(): continue
+    xs_=np.arange(_blk.shape[1]); good=~m_
+    for c_ in range(3):
+        row=_blk[_r,:,c_]
+        base_=np.interp(xs_,xs_[good],cv2.GaussianBlur(row[good].reshape(1,-1),(0,0),3).ravel())
+        res_=row[good]-np.interp(xs_[good],xs_[good],cv2.GaussianBlur(row[good].reshape(1,-1),(0,0),3).ravel())
+        fill=base_+_rng.choice(res_,size=len(xs_))*0.8
+        _blk[_r,m_,c_]=fill[m_]
+_m=cv2.GaussianBlur(_mk.astype(np.float32),(0,0),0.8)[...,None]
+plate[_Y0:_Y1,_X0:_X1]=_blk*_m+plate[_Y0:_Y1,_X0:_X1]*(1-_m)
 cv2.imwrite('/tmp/gw/plate_final.png',np.clip(plate,0,255).astype(np.uint8))
 Image.open('/tmp/gw/plate_final.png').save('/tmp/ui2/assets/panel.webp',quality=90,method=6)
 json.dump(ctl,open('/tmp/ui2/controls.json','w'),indent=1)

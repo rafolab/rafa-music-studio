@@ -232,3 +232,17 @@ Poznámky:
 | 4 | Konzola Model 5: `selectTrack`, `trackAdd`, `setInputGain`, `saveSong`; v `state` pribudli `selectedTrackId`, `inputGainDb`, `mixer.masterLevelL/R` |
 | 3 | Mix: `trackVolume`, `trackPan`, `trackSolo`, `masterVolume`; v `tracks` pribudli `solo`, `volumeDb`, `pan`; v `state` pribudol `mixer` (úrovne stôp) |
 | 2 | Tempo, metrum, metronóm, odpočítanie, LOOP (IN/OUT/dĺžka v taktoch, nahrávanie vrstiev v slučke), `transport.countingIn`, `musicalPosition`, kláves L |
+
+## API v5.1 (etapa 2E.6) – zvuk a diagnostika
+
+| Príkaz | Argumenty | Popis |
+|---|---|---|
+| `setBufferSize` | `{ samples }` | veľkosť bufferu zvukového zariadenia (z `state.device.bufferSizes`); nie počas nahrávania |
+| `setRecordOffset` | `{ ms }` | ručný posun nahrávok −200…+200 ms (kladný = nahrávka sa posunie skôr), uloží sa |
+| `resetDropouts` | – | vynuluje počítadlo výpadkov zvuku |
+
+Nové polia v `state.device`: `bufferSizes[]`, `cpuPeak` (%), `dropouts` (počet podozrení na výpadok od spustenia),
+`recordOffsetMs`, `autoCompMs` (automatická kompenzácia motora).
+
+LOOP: po nahratí prechodu slučky motor spojí rozdelené „takes" Tracktionu do jedného súboru `…_slucka.wav`
+s presnou dĺžkou slučky (oprava chýbajúcej doby / ticha pri odpočítaní).

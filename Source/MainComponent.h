@@ -19,6 +19,54 @@ private:
 };
 
 //==============================================================================
+/** Strazca vypadkov zvuku: druhy (tichy) odberatel zvukoveho zariadenia meria casy medzi
+    volaniami. Ked pride blok neskoro (viac ako ~2,5x dlzka bufferu), zvukova karta mohla
+    hrat ticho = praskanie / vypadok. Pri ASIO a DirectSound sa pocitaju aj hlasenia ovladaca.
+    Na zvuk nema vplyv (svoj vystup len vynuluje). */
+class AudioWatch : public juce::AudioIODeviceCallback
+{
+public:
+    void audioDeviceIOCallbackWithContext (const float* const*, int, float* const* out, int numOut, int numSamples,
+                                           const juce::AudioIODeviceCallbackContext&) override
+    {
+        for (int c = 0; c < numOut; ++c)
+            if (out[c] != nullptr)
+                juce::FloatVectorOperations::clear (out[c], numSamples);
+
+        const auto now = juce::Time::getHighResolutionTicks();
+
+        if (lastTicks != 0 && expectedMs > 0.0)
+        {
+            const double ms = juce::Time::highResolutionTicksToSeconds (now - lastTicks) * 1000.0;
+
+            if (ms > juce::jmax (expectedMs * 2.5, expectedMs + 8.0))
+                lateBlocks.fetch_add (1);
+
+            if (ms > worstGapMs.load())
+                worstGapMs.store (ms);
+        }
+
+        lastTicks = now;
+    }
+
+    void audioDeviceAboutToStart (juce::AudioIODevice* d) override
+    {
+        lastTicks = 0;
+        expectedMs = d != nullptr && d->getCurrentSampleRate() > 0
+                       ? d->getCurrentBufferSizeSamples() * 1000.0 / d->getCurrentSampleRate() : 0.0;
+    }
+
+    void audioDeviceStopped() override   { lastTicks = 0; }
+
+    std::atomic<int> lateBlocks { 0 };
+    std::atomic<double> worstGapMs { 0.0 };
+
+private:
+    juce::int64 lastTicks = 0;
+    double expectedMs = 0.0;
+};
+
+//==============================================================================
 /** Hlavna obrazovka RAFA MUSIC STUDIO - Etapa 1 (skuska zvuku). */
 class MainComponent : public juce::Component,
                       private juce::Timer,
@@ -76,6 +124,17 @@ private:
     void checkFinishedRecording();
     int timerTicks = 0;
 
+    // --- vypadky zvuku (diagnostika praskania) ---
+    AudioWatch audioWatch;
+    int dropouts = 0, lastLate = 0, lastXruns = -1;
+    float cpuPeak = 0.0f;
+    juce::StringArray dropoutLog;
+    void checkAudioDropouts();
+    void resetAudioDropouts();
+    void setBufferSize (int samples);
+    void setRecordOffsetMs (double ms);
+    double getRecordOffsetMs() const;
+
     // --- skladby ---
     void createNewSong();
     void openSong();
@@ -122,6 +181,7 @@ private:
     void setLoopPointAtPlayhead (bool isStart);
     void finishLoopRecordingPass();
     void checkLoopRecordingPass();
+    bool flattenLoopTakes (te::WaveAudioClip&);
     double snapToNearestBeat (double seconds) const;
     double getSecondsPerBar() const;
     juce::var buildTempoLoopState();

@@ -152,8 +152,8 @@ body { background: #120904; }
 .tp-head-line { position: absolute; top: 0; width: 2px; height: 2000px; background: #ffd27a; box-shadow: 0 0 6px rgba(255, 190, 80, .9); pointer-events: none; z-index: 3; }
 .tp-ruler { overflow: visible; }
 .tp-marks { overflow: hidden; height: 16px; }
-.tp-rows { position: relative; max-height: 360px; overflow-y: auto; overflow-x: hidden; }
-.tp-row { display: flex; align-items: center; height: 44px; border-bottom: 1px solid rgba(255, 170, 60, .12); cursor: pointer; }
+.tp-rows { position: relative; max-height: 560px; overflow-y: auto; overflow-x: hidden; }
+.tp-row { position: relative; display: flex; align-items: center; height: 44px; border-bottom: 1px solid rgba(255, 170, 60, .12); cursor: pointer; }
 .tp-row:hover { background: rgba(255, 170, 60, .05); }
 .tp-row.sel { background: rgba(255, 170, 60, .13); }
 .tp-row.sel .nm { color: #ffe6b8; }
@@ -168,3 +168,16 @@ body { background: #120904; }
 .tp-wave { flex: 1; height: 40px; overflow: hidden; }
 .tp-wave canvas { height: 40px; display: block; }
 .tp-foot { margin-top: 6px; font-size: 10.5px; color: #8f5a22; }
+.d-btns { display: flex; gap: 8px; margin-top: 6px; }
+.d-btn { flex: 1; font: 600 12px RafaSans, sans-serif; letter-spacing: .06em; padding: 4px 0; cursor: pointer; border: 1px solid #c47a2c; background: #2a1406; color: #ffd08a; }
+.d-btn.ok { background: linear-gradient(#c97a1e, #8f4f10); color: #fff3dc; }
+.d-btn:hover { filter: brightness(1.2); }
+
+
+.tp-grip { position: absolute; left: 210px; right: 0; bottom: -3px; height: 7px; cursor: ns-resize; z-index: 2; }
+.tp-grip:hover { background: linear-gradient(transparent 2px, rgba(255, 170, 60, .55) 2px, rgba(255, 170, 60, .55) 4px, transparent 4px); }
+.tp-row.tall .tp-name { align-self: flex-start; padding-top: 12px; }
+.tp-name .ms button.hz { padding: 1px 5px; }
+.d-active { color: #ffc164; font-weight: 600; }
+.fader-spr { will-change: transform; transition: transform 80ms linear; }
+.fader-spr.drag { transition: none; }
