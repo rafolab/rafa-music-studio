@@ -396,6 +396,8 @@ void MainComponent::closeEdit()
     edit->getTransport().removeChangeListener (this);
     trackList.setEdit (nullptr);
     currentRecordingTrack = nullptr;
+    editFileOps = nullptr;          // pred zrusenim skladby
+    editFileOpsFor = nullptr;
     edit = nullptr;
 }
 
@@ -443,8 +445,18 @@ void MainComponent::loadEdit (const juce::File& file)
 void MainComponent::saveEdit()
 {
     saveDueMs = 0;
-    if (edit != nullptr)
-        te::EditFileOperations (*edit).save (false, true, false);
+    if (edit == nullptr)
+        return;
+
+    if (editFileOps == nullptr || editFileOpsFor != edit.get())
+    {
+        editFileOps = std::make_unique<te::EditFileOperations> (*edit);
+        editFileOpsFor = edit.get();
+    }
+
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    editFileOps->save (false, true, false);
+    RAFA_T ("save " + juce::String (juce::Time::getMillisecondCounterHiRes() - t0, 1) + " ms");
 }
 
 //==============================================================================
@@ -930,8 +942,11 @@ void MainComponent::checkFinishedRecording()
         }
 
         // nahravanie v slucke: rozdelene "takes" spojit do jedneho celeho prechodu slucky
+        RAFA_T ("clipFound pos=" + juce::String (edit->getTransport().getPosition().inSeconds(), 3));
+        LoopFlattenResult flat;
         if (newClip->hasAnyTakes())
-            flattenLoopTakes (*newClip);
+            flat = flattenLoopTakes (*newClip);
+        RAFA_T ("flattenDone pos=" + juce::String (edit->getTransport().getPosition().inSeconds(), 3) + " status=" + juce::String ((int) flat.status));
 
         auto file = newClip->getOriginalFile();
         auto seconds = newClip->getPosition().getLength().inSeconds();
@@ -949,7 +964,11 @@ void MainComponent::checkFinishedRecording()
             pushHistory (std::move (h));
 
             saveEdit();
-            if (transport.looping && transport.isPlaying())
+            if (flat.status == LoopFlattenResult::failed)
+                setStatus (sk ("CHYBA: slučku sa nepodarilo spracovať (") + flat.error
+                             + sk ("). Pôvodná nahrávka ostala v priečinku skladby – vrstvu skontroluj alebo vráť (UNDO) a pošli Diagnostiku."),
+                           RafaColours::record);
+            else if (transport.looping && transport.isPlaying())
                 setStatus (sk ("Vrstva uložená (") + juce::String (seconds, 1)
                              + sk (" s) – slučka hrá ďalej. REC = ďalšia vrstva."), RafaColours::play);
             else
@@ -1024,6 +1043,15 @@ void MainComponent::updateTransportButtons()
 //==============================================================================
 void MainComponent::timerCallback()
 {
+    {   static double lastT = 0; const double nowT = juce::Time::getMillisecondCounterHiRes();
+        if (lastT > 0 && nowT - lastT > 80) RAFA_T ("timerStall " + juce::String (nowT - lastT, 0) + " ms");
+        if (lastT > 0 && nowT - lastT > 250)   // zablokovane hlavne vlakno (obrazovka aj riadenie motora stoja) - do Diagnostiky
+        {
+            dropoutLog.add (juce::Time::getCurrentTime().formatted ("%H:%M:%S") + "  hlavne vlakno stalo " + juce::String (nowT - lastT, 0) + " ms");
+            while (dropoutLog.size() > 60) dropoutLog.remove (0);
+        }
+        lastT = nowT; }
+
     {
         auto db = meteredDevice != nullptr ? meterClient.getAndClearAudioLevel (0).dB : -100.0f;
         inputMeterDb = db > inputMeterDb ? db : juce::jmax (db, inputMeterDb - 1.5f);

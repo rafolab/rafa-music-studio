@@ -201,6 +201,7 @@ void MainComponent::finishLoopRecordingPass()
         return;
 
     loopRecordPass = false;
+    RAFA_T ("finishPass pos=" + juce::String (edit->getTransport().getPosition().inSeconds(), 3));
     edit->getTransport().stopRecording (false);   // prehravanie slucky bezi dalej
 
     pendingRecordingCheck = true;
@@ -228,12 +229,15 @@ void MainComponent::checkLoopRecordingPass()
     auto loopStart = tr.getLoopRange().getStart().inSeconds();
 
     // slucka sa pretocila (LOOP OUT -> LOOP IN) = jeden prechod je nahraty.
-    // Zastavime az ~150 ms po pretoceni, aby koniec vrstvy nechybal (kompenzacia latencie);
+    // Zastavime ~50 ms po pretoceni (motor sam dopise aj vzorky kompenzacie latencie), aby koniec vrstvy nechybal (kompenzacia latencie);
     // Tracktion klip oreze presne na LOOP OUT a zvysok kratsi ako 0,1 s zahodi.
     if (pos < lastLoopPosition - 0.25)
+    {
         loopWrapped = true;
+        RAFA_T ("wrap pos=" + juce::String (pos, 3));
+    }
 
-    if (loopWrapped && pos >= loopStart + 0.15)
+    if (loopWrapped && pos >= loopStart + 0.05)
     {
         loopWrapped = false;
         finishLoopRecordingPass();
@@ -246,13 +250,21 @@ void MainComponent::checkLoopRecordingPass()
 // Tracktion po nahravani v slucke rozdeli zaznam na "takes" po dlzke slucky, ale pocita ich od
 // ZACIATKU SUBORU. S odpocitanim (count-in) subor zacina pred LOOP IN, takze take 1 obsahuje
 // odpocitanie a klip (offset za koncom take 1) hra ticho alebo bez casti slucky (chybajuca doba).
-// Oprava: takes spojime spat do povodneho zaznamu a vyrezeme z neho presne jeden prechod slucky
-// do jedneho suboru; klip potom zacina na LOOP IN s offsetom 0 a ma presne dlzku slucky.
-bool MainComponent::flattenLoopTakes (te::WaveAudioClip& clip)
+// Oprava: takes spojime (v poradi 1, 2, 3 …) spat do povodneho zaznamu a vyrezeme z neho presne
+// jeden prechod slucky do noveho suboru …_slucka.wav. Klip sa prepne na novy subor AZ PO overeni,
+// ze subor je zapisany, citatelny a ma presnu dlzku. Povodne subory sa NEMAZU (zostavaju v
+// priecinku skladby pre pripad obnovy). Pri akejkolvek chybe klip ostava nezmeneny.
+MainComponent::LoopFlattenResult MainComponent::flattenLoopTakes (te::WaveAudioClip& clip)
 {
-    if (edit == nullptr || ! clip.hasAnyTakes())
-        return false;
+    LoopFlattenResult res;
 
+    if (edit == nullptr || ! clip.hasAnyTakes())
+        return res;   // notNeeded
+
+    res.status = LoopFlattenResult::failed;
+    auto fail = [&res] (const juce::String& why) { res.error = why; juce::Logger::writeToLog ("LOOP oprava zlyhala: " + why); return res; };
+
+    // 1) zoznam suborov takes bez duplicit, zoradeny podla cisla (zakladny subor = 1, "_take_N" = N)
     auto takesTree = clip.state.getChildWithName (te::IDs::TAKES);
     juce::Array<juce::File> files;
 
@@ -260,55 +272,85 @@ bool MainComponent::flattenLoopTakes (te::WaveAudioClip& clip)
     {
         auto f = te::SourceFileReference::findFileFromString (*edit, t[te::IDs::source].toString());
 
-        if (f.existsAsFile() && ! files.contains (f))
+        if (! f.existsAsFile())
+            return fail ("chyba subor take: " + t[te::IDs::source].toString());
+
+        if (! files.contains (f))
             files.add (f);
     }
 
-    if (files.isEmpty())
-        return false;
+    auto takeNumber = [] (const juce::File& f)
+    {
+        auto n = f.getFileNameWithoutExtension();
+        auto i = n.lastIndexOfIgnoreCase ("_take_");
+        return i < 0 ? 1 : n.substring (i + 6).getIntValue();
+    };
 
+    std::stable_sort (files.begin(), files.end(), [&] (const juce::File& x, const juce::File& y) { return takeNumber (x) < takeNumber (y); });
+
+    for (int i = 0; i < files.size(); ++i)
+        if (takeNumber (files[i]) != i + 1)
+            return fail ("neuplna postupnost takes (" + files[i].getFileName() + ")");
+
+    // 2) nacitanie a spojenie - vsetky takes musia mat rovnaky format, vsetky okrem posledneho dlzku slucky
     juce::AudioFormatManager fm;
     fm.registerBasicFormats();
 
+    const auto loopRange = edit->getTransport().getLoopRange();
     double sampleRate = 0.0;
     int channels = 0, bits = 24;
+    juce::int64 loopSamples = 0;
     juce::AudioBuffer<float> all;
 
-    for (auto& f : files)
+    for (int i = 0; i < files.size(); ++i)
     {
-        std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
+        std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (files[i]));
 
         if (r == nullptr)
-            return false;
+            return fail ("subor sa neda citat: " + files[i].getFileName());
 
-        if (sampleRate <= 0.0)
+        if (i == 0)
         {
             sampleRate = r->sampleRate;
             channels = (int) r->numChannels;
             bits = (int) r->bitsPerSample;
+            loopSamples = (juce::int64) std::llround (loopRange.getLength().inSeconds() * sampleRate);
             all.setSize (channels, 0);
         }
+        else if (! juce::approximatelyEqual (r->sampleRate, sampleRate) || (int) r->numChannels != channels)
+            return fail ("rozny format takes");
+
+        if (sampleRate <= 0.0 || channels <= 0 || loopSamples <= 0)
+            return fail ("neplatny format");
+
+        if (i < files.size() - 1 && std::abs (r->lengthInSamples - loopSamples) > 2)
+            return fail ("take " + juce::String (i + 1) + " ma dlzku " + juce::String (r->lengthInSamples)
+                           + " namiesto " + juce::String (loopSamples));
 
         const int n = (int) r->lengthInSamples, old = all.getNumSamples();
         all.setSize (channels, old + n, true, true);
-        r->read (&all, old, n, 0, true, true);
+
+        if (! r->read (&all, old, n, 0, true, true))
+            return fail ("chyba pri citani " + files[i].getFileName());
     }
 
-    if (sampleRate <= 0.0 || channels <= 0)
-        return false;
-
-    const auto loopRange = edit->getTransport().getLoopRange();
+    // 3) vyrez presne jedneho prechodu slucky; chybat moze najviac 5 ms (zaokruhlenie), inak je to chyba
     const int start = (int) std::llround (clip.getPosition().getOffset().inSeconds() * sampleRate);
-    const int length = (int) std::llround (loopRange.getLength().inSeconds() * sampleRate);
+    const int length = (int) loopSamples;
     const int available = juce::jlimit (0, length, all.getNumSamples() - start);
+    const int tolerance = (int) (0.005 * sampleRate);
+
+    if (start < 0 || available < length - tolerance)
+        return fail ("v nahravke chyba " + juce::String ((length - available) * 1000.0 / sampleRate, 0)
+                       + " ms konca slucky (nahrane " + juce::String (all.getNumSamples()) + " vzoriek, zaciatok " + juce::String (start) + ")");
 
     juce::AudioBuffer<float> pass (channels, length);
     pass.clear();
 
     for (int c = 0; c < channels; ++c)
-        if (available > 0)
-            pass.copyFrom (c, 0, all, c, start, available);
+        pass.copyFrom (c, 0, all, c, start, available);
 
+    // 4) zapis noveho suboru a jeho overenie (zapis, dlzka, citatelnost)
     auto outFile = files[0].getSiblingFile (files[0].getFileNameWithoutExtension() + "_slucka")
                            .withFileExtension ("wav").getNonexistentSibling (false);
     {
@@ -316,35 +358,50 @@ bool MainComponent::flattenLoopTakes (te::WaveAudioClip& clip)
         auto stream = std::make_unique<juce::FileOutputStream> (outFile);
 
         if (! stream->openedOk())
-            return false;
+            return fail ("neda sa vytvorit " + outFile.getFileName());
 
         std::unique_ptr<juce::AudioFormatWriter> writer (wav.createWriterFor (stream.get(), sampleRate, (unsigned int) channels,
                                                                               juce::jlimit (16, 24, bits), {}, 0));
         if (writer == nullptr)
-            return false;
+        {
+            stream.reset();
+            outFile.deleteFile();
+            return fail ("neda sa zapisat WAV");
+        }
 
-        stream.release();
-        writer->writeFromAudioSampleBuffer (pass, 0, length);
+        stream.release();   // vlastni ho writer
+
+        if (! writer->writeFromAudioSampleBuffer (pass, 0, length))
+        {
+            writer.reset();
+            outFile.deleteFile();
+            return fail ("zapis WAV zlyhal");
+        }
+    }   // writer sa zatvori a dopise hlavicku
+
+    {
+        std::unique_ptr<juce::AudioFormatReader> check (fm.createReaderFor (outFile));
+
+        if (check == nullptr || check->lengthInSamples != length || (int) check->numChannels != channels
+             || ! juce::approximatelyEqual (check->sampleRate, sampleRate))
+        {
+            check.reset();
+            outFile.deleteFile();
+            return fail ("kontrola noveho WAV zlyhala");
+        }
     }
 
+    // 5) az teraz prepnut klip na novy subor (povodne takes zostavaju na disku)
+    // informacie o novom subore nacitat skor, nez ho klip pouzije (inak motor moze klip chvilu nehrat)
+    engine.getAudioFileManager().forceFileUpdate (te::AudioFile (engine, outFile));
     clip.clearTakes();
     clip.getSourceFileReference().setToFile (outFile, te::SourceFileReference::PathStyle::alwaysRelative, false);
     clip.setPosition ({ { loopRange.getStart(), loopRange.getEnd() }, te::TimeDuration() });
 
-    auto& afm = engine.getAudioFileManager();
-
-    for (auto& f : files)
-    {
-        afm.releaseFile (te::AudioFile (engine, f));
-        f.deleteFile();
-    }
-
-    afm.forceFileUpdate (te::AudioFile (engine, outFile));
-
-    if (available < length)
-        DBG ("flattenLoopTakes: chyba " << (length - available) << " vzoriek na konci");
-
-    return true;
+    res.status = LoopFlattenResult::ok;
+    res.file = outFile;
+    res.missingSamples = length - available;
+    return res;
 }
 
 //==============================================================================

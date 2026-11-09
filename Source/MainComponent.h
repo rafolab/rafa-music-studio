@@ -4,6 +4,10 @@
 #include "RafaLookAndFeel.h"
 #include "TrackListComponent.h"
 
+// docasne merania casu (len ked je nastavena premenna prostredia RAFA_TIMING)
+#define RAFA_T(msg) do { static const bool on_ = juce::SystemStats::getEnvironmentVariable ("RAFA_TIMING", {}).isNotEmpty(); \
+    if (on_) std::fprintf (stderr, "TIMING %lld %s\n", (long long) juce::Time::currentTimeMillis(), juce::String (msg).toRawUTF8()); } while (0)
+
 //==============================================================================
 /** Jednoduchy merac urovne vstupu (aby bolo vidiet, ze gitara "ide" do pocitaca). */
 class InputMeter : public juce::Component
@@ -40,15 +44,18 @@ public:
             const double ms = juce::Time::highResolutionTicksToSeconds (now - lastTicks) * 1000.0;
 
             if (ms > juce::jmax (expectedMs * 2.5, expectedMs + 8.0))
-                lateBlocks.fetch_add (1);
+                lateBlocks.fetch_add (1, std::memory_order_relaxed);
 
-            if (ms > worstGapMs.load())
-                worstGapMs.store (ms);
+            if (ms > worstGapMs.load (std::memory_order_relaxed))
+                worstGapMs.store (ms, std::memory_order_relaxed);
         }
 
         lastTicks = now;
     }
 
+    // aboutToStart / stopped vola AudioDeviceManager pod svojim zamkom zvukoveho volania, teda nikdy
+    // sucasne s audioDeviceIOCallbackWithContext - lastTicks a expectedMs pouziva len zvukove vlakno.
+    // Hlavne vlakno cita iba atomicke pocitadla (staci memory_order_relaxed, su to len statistiky).
     void audioDeviceAboutToStart (juce::AudioIODevice* d) override
     {
         lastTicks = 0;
@@ -83,6 +90,10 @@ public:
 private:
     te::Engine& engine;
     std::unique_ptr<te::Edit> edit;
+    // Trvaly objekt ukladania: drzi pri zivote zapisovacie vlakno Tracktionu. Docasny objekt pri kazdom
+    // ulozeni ho zakazdym ukoncoval, co zablokovalo hlavne vlakno az na 1-2 s (ticho po nahrati slucky).
+    std::unique_ptr<te::EditFileOperations> editFileOps;
+    te::Edit* editFileOpsFor = nullptr;
     juce::File editFile;
     std::unique_ptr<juce::PropertiesFile> settings;
     RafaLookAndFeel lookAndFeel;
@@ -181,7 +192,14 @@ private:
     void setLoopPointAtPlayhead (bool isStart);
     void finishLoopRecordingPass();
     void checkLoopRecordingPass();
-    bool flattenLoopTakes (te::WaveAudioClip&);
+    struct LoopFlattenResult
+    {
+        enum Status { notNeeded, ok, failed } status = notNeeded;
+        juce::String error;
+        juce::File file;
+        int missingSamples = 0;
+    };
+    LoopFlattenResult flattenLoopTakes (te::WaveAudioClip&);
     double snapToNearestBeat (double seconds) const;
     double getSecondsPerBar() const;
     juce::var buildTempoLoopState();
