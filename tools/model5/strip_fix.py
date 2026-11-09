@@ -14,7 +14,7 @@ reg=cv2.erode(reg,np.ones((9,9),np.uint8))
 feat=np.zeros_like(reg)
 hp=L-cv2.GaussianBlur(L,(0,0),6)
 feat|=(hp>10).astype(np.uint8)            # svetle znacky
-feat|=(L<26).astype(np.uint8)             # drazky, tiene
+feat|=(L<12).astype(np.uint8)             # drazky
 kn=json.load(open('/tmp/gw/knobs.json'))
 for k in ('ch1','ch2','ch3','ch4'):
     c=kn[k]; cv2.circle(feat,(int(c['cx']),int(c['cy'])),46,1,-1)
@@ -28,7 +28,7 @@ def nconv(img,m,s):
     num=cv2.GaussianBlur(img*m,(0,0),s); den=cv2.GaussianBlur(m.astype(np.float32),(0,0),s)
     return num/np.maximum(den,1e-4)
 m=samp.astype(np.float32)
-LF=np.dstack([nconv(P[...,c],m,2.5) for c in range(3)])
+LF=np.dstack([nconv(P[...,c],m,4) for c in range(3)])
 # 4) hladka plocha: polynom 3. stupna z cistych vzoriek
 ys,xs=np.nonzero(samp); sel=np.random.default_rng(0).choice(len(xs),min(40000,len(xs)),replace=False); xs,ys=xs[sel],ys[sel]
 def basis(x,y):
@@ -41,12 +41,15 @@ for c in range(3):
     coef,*_=np.linalg.lstsq(A,LF[ys,xs,c],rcond=None)
     fit[...,c]=(basis(XX.astype(float),YY.astype(float))@coef)
 # 5) nova plocha = povodne detaily (vysoke frekvencie) + hladke osvetlenie
-out=P-LF+fit
+# rovnaka textura vsade: mimo prvkov (znacky, drazky) len hladka plocha + jednotne jemne zrno
+featsoft=cv2.GaussianBlur(cv2.dilate(feat,np.ones((3,3),np.uint8)).astype(np.float32),(0,0),1.2)[...,None]
+grain=cv2.GaussianBlur(np.random.default_rng(7).normal(0,1.6,(H,W)).astype(np.float32),(0,0),0.7)[...,None]
+out=(P-LF+fit)*featsoft+(fit+grain)*(1-featsoft)
 # gombiky a M/S ponechat povodne (makky prechod), aplikovat len v oblasti panelu
 keep=np.zeros((H,W),np.float32)
 for k in ('ch1','ch2','ch3','ch4'):
-    c=kn[k]; cv2.circle(keep,(int(c['cx']),int(c['cy'])),47,1,-1)
-slot=cv2.dilate((cv2.GaussianBlur(L,(0,0),2)<28).astype(np.uint8),np.ones((9,9),np.uint8)).astype(np.float32)
+    c=kn[k]; cv2.circle(keep,(int(c['cx']),int(c['cy'])),40,1,-1)
+slot=cv2.dilate((cv2.GaussianBlur(L,(0,0),1)<12).astype(np.uint8),np.ones((5,5),np.uint8)).astype(np.float32)
 keep=np.maximum(keep,slot*reg)
 for n_,b in ctl['buttons'].items():
     if n_.startswith(('mute','solo')): cv2.rectangle(keep,(b['x']-3,b['y']-3),(b['x']+b['w']+3,b['y']+b['h']+3),1,-1)

@@ -140,6 +140,8 @@ for n,f in F.items():
     ring=cv2.GaussianBlur(cv2.dilate(inner,np.ones((21,21),np.uint8)),(0,0),3)
     al=np.maximum(np.maximum(inner,al_edge),shadow*ring)
     col=np.where(inner[...,None]>0.5,o,o*0+np.where((al_edge>0)[...,None],o,0))
+    # jazdec bez farebneho nadychu od povodne svietiaceho M (fader 2 bol oranzovy)
+    oL=lum(o)[...,None]; o=o*0.35+np.repeat(oL,3,2)*0.65
     save_sprite(f'fader_{n}',np.where((inner+al_edge)[...,None]>0,o,np.zeros_like(o)),al)
     ctl['faders'][n]={'sprite':f'assets/fader_{n}.webp','x':S[0],'y':S[1],'w':S[2]-S[0],'h':S[3]-S[1],
         'grooveY':f['groove'],'slant':round(slant,4),'marks':{str(k):v for k,v in f['marks'].items()},
@@ -158,7 +160,7 @@ B={ # id: (x,y,w,h) z detekcie, typ
  'loopIn':(1231,426,86,59,'grey'),'loopOut':(1326,421,88,59,'grey'),'loop':(1417,416,91,68,'litgrey'),
  'layer1':(753,594,80,61,'litgrey'),'layer2':(837,591,74,51,'grey'),'layer3':(915,588,73,50,'grey'),'layer4':(992,584,73,50,'grey'),'layerAdd':(1074,580,73,50,'grey'),
  'metroOn':(1308,573,69,45,'litgrey'),
- 'mute1':(240,743,41,37,'litcream'),'solo1':(290,742,40,36,'grey2'),'mute2':(367,734,48,46,'litcream'),'solo2':(417,735,43,36,'grey2fix'),
+ 'mute1':(240,743,41,37,'litcream'),'solo1':(290,742,40,36,'grey2'),'mute2':(369,737,41,37,'litcream'),'solo2':(417,735,43,36,'grey2fix'),
  'mute3':(501,731,40,40,'cream'),'solo3':(549,728,40,36,'grey2'),'mute4':(628,724,41,36,'litcream'),'solo4':(676,722,40,35,'grey2fix'),
 }
 P=plate.copy()
@@ -247,6 +249,29 @@ def lit_from(master,n,glyph,ink_col,tint=None,affine=False):
     base=warp_master(MASTER[n],n)
     w=w*wm+base*(1-wm)
     return w*(1-glyph[...,None])+ink_col*glyph[...,None]
+LIT_PAL={}
+def lit_own(n,base,glyph,ink_col,master='layer1'):
+    """svietiaci stav z TVARU tohto tlacidla: jas kazdeho bodu sa prevedie na farby pravej svietiacej
+    predlohy (kvantilove mapovanie) a prida sa jemny priebeh svetla predlohy (len nizke frekvencie)"""
+    if master not in LIT_PAL: LIT_PAL[master]=core(clean(master))
+    # ryhy brúseného kovu pod svetlom zjemnit (kryt je mliecny), tvar a hrany ostanu
+    sm=cv2.bilateralFilter(np.clip(base,0,255).astype(np.uint8),11,26,11).astype(np.float32)
+    col=remap(sm,LIT_PAL[master])
+    # priebeh svetla z predlohy (rozmazany), prenesený len zvacsenim
+    rb=B[master]; bw_,bh_=B[n][2],B[n][3]; sx_=bw_/rb[2]; sy_=bh_/rb[3]
+    mf=clean(master); Lm=cv2.GaussianBlur(lum(mf),(0,0),6)
+    x0,y0,x1,y1=crop(B[n]); M=np.float32([[sx_,0,4-4*sx_],[0,sy_,4-4*sy_]])
+    Lw=cv2.warpAffine(Lm,M,(x1-x0,y1-y0),borderMode=cv2.BORDER_REPLICATE)
+    h_,w_=Lw.shape; cm=np.zeros_like(Lw,bool); cm[6:h_-12,6:w_-6]=True
+    g=np.clip(Lw/max(1,np.median(Lw[cm])),0.75,1.2)[...,None]
+    Lb=lum(base); gb=np.clip(cv2.GaussianBlur(Lb,(0,0),6)/max(1,np.median(Lb[cm])),0.75,1.2)[...,None]
+    col=np.clip(col*(g/gb)**0.6,0,255)
+    # farebne zladit s pravym svietiacim tlacidlom (median farby tela)
+    ref=np.median(LIT_PAL[master],0); cur=np.median(col[cm],0)
+    col=np.clip(col*(ref/np.maximum(cur,1)),0,255)
+    # brusena textura kovu cez svetlo len jemne (pod svetlom je mlecny kryt)
+    col=cv2.bilateralFilter(col.astype(np.float32),5,18,5)
+    return col*(1-glyph[...,None])+ink_col*glyph[...,None]
 def warp_master(master,n):
     rb=B[master]; bx,by,bw,bh=B[n][:4]; x0,y0,x1,y1=crop(B[n])
     body=clean(master)
@@ -304,7 +329,7 @@ for n,r in B.items():
         else:
             off=base*(1-ga[...,None])+INK_OFF*ga[...,None]
             if n in ('layer1','loop','metroOn'): on=src          # povodne svietiace tlacidla z fotky
-            else: on=lit_from(LIT_MASTER.get(n,'layer1'),n,ga,INK_LIT)
+            else: on=lit_own(n,base,ga,INK_LIT)
     off=np.where(m[...,None]>0,off,src); on=np.where(m[...,None]>0,on,src)
     plate[y0:y1,x0:x1]=src*(1-m[...,None])+off*m[...,None]
     save_sprite(f'btn_{n}_off',off,m); save_sprite(f'btn_{n}_on',on,m)

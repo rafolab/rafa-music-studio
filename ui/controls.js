@@ -305,10 +305,10 @@ window.RAFA_CONTROLS = {
    "kind": "grey2"
   },
   "mute2": {
-   "x": 363,
-   "y": 730,
-   "w": 57,
-   "h": 60,
+   "x": 365,
+   "y": 733,
+   "w": 50,
+   "h": 51,
    "off": "assets/btn_mute2_off.webp",
    "on": "assets/btn_mute2_on.webp",
    "kind": "litcream"
