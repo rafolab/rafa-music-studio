@@ -518,11 +518,17 @@ void MainComponent::installLoopBridge (te::AudioTrack& track)
 
 void MainComponent::armLoopBridge (double loopStart, double loopEnd, juce::int64 knownStartFrame)
 {
-    bridgeArmed = true;   // len jeden pokus za prechod
+    // Pokus o pripravu sa pri docasnej chybe (subor prave zapisovany / zamknuty) opakuje pri dalsom
+    // tiku casovaca, kym trva okno pred koncom prechodu; trvale chyby ukoncia pokusy hned.
     auto* bp = dynamic_cast<LoopBridgePlugin*> (bridgePlugin.get());
 
     if (bp == nullptr || edit == nullptr)
+    {
+        bridgeArmed = true;
         return;
+    }
+
+    ++bridgeArmAttempts;
 
     juce::File file;
 
@@ -582,10 +588,16 @@ void MainComponent::armLoopBridge (double loopStart, double loopEnd, juce::int64
 
     if (error.isNotEmpty() || audio.getNumSamples() == 0)
     {
-        lastBridgeReport = "premostenie nepripravene: " + error;
+        const bool permanent = file == juce::File() || bridgeSec < 0.1 || bridgeArmAttempts >= 8;
+        lastBridgeReport = "premostenie nepripravene (pokus " + juce::String (bridgeArmAttempts) + "): " + error;
         RAFA_T (lastBridgeReport);
-        return;   // bez premostenia: spravanie ako doteraz
+
+        if (permanent)
+            bridgeArmed = true;   // dalsie pokusy v tomto prechode uz nie; bez premostenia ako doteraz
+        return;
     }
+
+    bridgeArmed = true;
 
     bp->arm (std::move (audio), rate, te::TimePosition::fromSeconds (loopStart));
     bridgeArmedMs = juce::Time::getMillisecondCounter();
@@ -636,6 +648,7 @@ void MainComponent::removeLoopBridge()
     }
 
     bridgeArmed = false;
+    bridgeArmAttempts = 0;
 }
 
 //==============================================================================

@@ -48,7 +48,7 @@ public:
     /** Pripravi (na hlavnom vlakne) zaciatok slucky v pamati a zapne premostenie.
         audio: kanaly zaciatku slucky (od LOOP IN), sampleRate jeho frekvencia. */
     void arm (juce::AudioBuffer<float>&& audio, double sampleRate, te::TimePosition loopStart);
-    void disarm()                       { armed.store (false); }
+    void disarm()                       { armed.store (false); waitForAudioThread(); }
 
     enum class Result { idle, waiting, playing, handedOver, timedOut };
     Result getResult() const            { return (Result) result.load(); }
@@ -61,6 +61,8 @@ private:
     int outChannels = 1;
     double startSec = 0.0;
     std::atomic<bool> armed { false };
+    std::atomic<int> inCallback { 0 };   // zvukove vlakno prave cita data
+    void waitForAudioThread();
     std::atomic<int> result { (int) Result::idle };
     std::atomic<int> bridgedSamples { 0 };
 };

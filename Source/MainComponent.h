@@ -139,6 +139,8 @@ private:
     // --- vypadky zvuku (diagnostika praskania) ---
     AudioWatch audioWatch;
     int dropouts = 0, lastLate = 0, lastXruns = -1;
+    juce::String dropoutDevKey;
+    juce::uint32 dropoutQuietUntil = 0;
     float cpuPeak = 0.0f;
     juce::StringArray dropoutLog;
     void checkAudioDropouts();
@@ -224,6 +226,7 @@ private:
     // --- plynule prve opakovanie slucky (premostenie z pamate, LoopBridge.h) ---
     te::Plugin::Ptr bridgePlugin;
     bool bridgeArmed = false;
+    int bridgeArmAttempts = 0;
     juce::uint32 bridgeArmedMs = 0;
     juce::String lastBridgeReport;
     juce::AudioBuffer<float> bridgeDebugCopy;

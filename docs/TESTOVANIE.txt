@@ -1,4 +1,4 @@
-RAFA MUSIC STUDIO 1.0.0-rc1 – TEST NA WINDOWS (s BEAM Mini)
+RAFA MUSIC STUDIO 1.0.0-rc2 – TEST NA WINDOWS (s BEAM Mini)
 ============================================================
 Pri každom bode napíš OK alebo čo bolo zle. Stačí krátko.
 
@@ -11,6 +11,8 @@ A. SLUČKA (najdôležitejšie)
  A5  Kým slučka hrá: vyber stopu 2, REC, zahraj vrstvu. Prehrávanie
      sa nezastavilo? Vrstva sedí s prvou (nemešká, nepredbieha)?
  A6  Tretia a štvrtá vrstva – rovnako.
+ A6b MONITOR zapnutý: hraj nahlas cez začiatok slučky pri vrstve –
+     prvé opakovanie nesmie byť na chvíľu hlasnejšie.
  A7  Počas celého testu: praskanie, zaseknutie? (SETTINGS → Výpadky zvuku)
 
 B. SPOĽAHLIVOSŤ
@@ -23,13 +25,17 @@ B. SPOĽAHLIVOSŤ
      uloženú skladbu → hrá rovnako.
  B7  Otvor jednu starú skladbu z predošlej verzie.
  B8  Export stôp a mixu → otvor v Cakewalk, sedia na sebe.
+ B9  Na skúšobnej skladbe: počas REC zatvor program krížikom. Po novom
+     spustení otvor skladbu – nahrávka má byť uložená, nič nepokazené.
+ B10 Uložiť skladbu hneď pri prvom opakovaní slučky – opakovanie
+     nesmie mať medzeru.
 
 C. OVLÁDANIE A VZHĽAD
  C1  Všetky tlačidlá myšou; DATA a Enter v menu.
  C2  EFFECTS ukáže "Efekty budú vo verzii 1.1".
  C3  Grafika: ak vidíš chybu oproti originálu, napíš ktorá
      (prípadne pošli výrez obrazovky).
- C4  SETTINGS → Diagnostika: "1.0.0-rc1 (commit 409ecd1)".
+ C4  SETTINGS → Diagnostika: "1.0.0-rc2 (commit 409ecd1)".
 
 Verzia 1.0 bude označená ako stabilná až po tvojom teste.
 

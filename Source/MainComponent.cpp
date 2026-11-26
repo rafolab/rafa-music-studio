@@ -457,13 +457,14 @@ void MainComponent::saveEdit (bool automatic)
         const bool busy = bp != nullptr && (bp->getResult() == LoopBridgePlugin::Result::waiting
                                              || bp->getResult() == LoopBridgePlugin::Result::playing);
 
-        if (automatic && busy)
+        if (busy)
         {
-            saveDueMs = juce::Time::getMillisecondCounter() + 400;   // automaticke ulozenie o chvilu
+            // premostenie prave hra: ulozenie pockame (najviac ~1 s), aby nevznikla medzera
+            saveDueMs = juce::Time::getMillisecondCounter() + 250;
             return;
         }
 
-        removeLoopBridge();   // ulozenie na pokyn pouzivatela ma prednost
+        removeLoopBridge();   // pomocny plugin sa do projektu neuklada
     }
 
     if (editFileOps == nullptr || editFileOpsFor != edit.get())
@@ -1272,6 +1273,25 @@ void MainComponent::checkAudioDropouts()
         {
             if (lastXruns >= 0 && x > lastXruns) newEvents = juce::jmax (newEvents, x - lastXruns);
             lastXruns = x;
+        }
+    }
+
+    // pri spusteni programu a po zmene zvukoveho zariadenia / buffra sa ovladac chvilu ustaluje -
+    // jednorazove trhnutia vtedy nie su vypadky pri hrani (nerataju sa)
+    {
+        const auto now = juce::Time::getMillisecondCounter();
+        const juce::String devKey = dev == nullptr ? juce::String() : dev->getName() + "|" + juce::String (dev->getCurrentBufferSizeSamples())
+                                                                       + "|" + juce::String (dev->getCurrentSampleRate());
+        if (devKey != dropoutDevKey)
+        {
+            dropoutDevKey = devKey;
+            dropoutQuietUntil = now + 3000;
+        }
+
+        if (now < dropoutQuietUntil)
+        {
+            cpuPeak = 0.0f;
+            return;
         }
     }
 

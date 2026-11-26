@@ -4,6 +4,7 @@
 void LoopBridgePlugin::arm (juce::AudioBuffer<float>&& audio, double sampleRate, te::TimePosition loopStart)
 {
     armed.store (false);              // zvukove vlakno prestane citat stare data
+    waitForAudioThread();             // a dockame, kym dociita prave beziaci blok
     data = std::move (audio);
     dataRate = sampleRate;
     startSec = loopStart.inSeconds();
@@ -12,10 +13,22 @@ void LoopBridgePlugin::arm (juce::AudioBuffer<float>&& audio, double sampleRate,
     armed.store (true, std::memory_order_release);
 }
 
+void LoopBridgePlugin::waitForAudioThread()
+{
+    // hlavne vlakno: najviac ~100 ms (jeden blok trva par ms)
+    for (int i = 0; i < 1000 && inCallback.load() > 0; ++i)
+        juce::Thread::sleep (0), juce::Thread::yield();
+
+    for (int i = 0; i < 100 && inCallback.load() > 0; ++i)
+        juce::Thread::sleep (1);
+}
+
 // Zvukove vlakno: ziadna alokacia, ziadny zamok, ziadny disk.
 void LoopBridgePlugin::applyToBuffer (const te::PluginRenderContext& rc)
 {
-    if (! armed.load (std::memory_order_acquire) || rc.destBuffer == nullptr || ! rc.isPlaying)
+    struct Guard { std::atomic<int>& c; Guard (std::atomic<int>& x) : c (x) { c.fetch_add (1); } ~Guard() { c.fetch_sub (1); } } guard (inCallback);
+
+    if (! armed.load() || rc.destBuffer == nullptr || ! rc.isPlaying)
         return;
 
     const auto state = (Result) result.load (std::memory_order_relaxed);
@@ -49,7 +62,7 @@ void LoopBridgePlugin::applyToBuffer (const te::PluginRenderContext& rc)
 
     // 1) Je uz v stope skutocny klip? Vstup X (klip + pripadny odposluch) porovname so zaciatkom
     //    slucky B: ak X obsahuje B, tak energia (X - B) je vyrazne mensia ako energia X.
-    double eX = 0.0, eD = 0.0, eB = 0.0;
+    double eX = 0.0, eD = 0.0, eB = 0.0, xb = 0.0;
     int count = 0;
 
     for (int i = 0; i < n; ++i)
@@ -68,6 +81,7 @@ void LoopBridgePlugin::applyToBuffer (const te::PluginRenderContext& rc)
             eX += (double) x * x;
             eD += (double) (x - b) * (x - b);
             eB += (double) b * b;
+            xb += (double) x * b;
         }
     }
 
@@ -76,7 +90,12 @@ void LoopBridgePlugin::applyToBuffer (const te::PluginRenderContext& rc)
 
     const bool bridgeAudible = eB > 1.0e-7 * count * chans;    // nad ~ -70 dBFS
 
-    if (bridgeAudible && eD < 0.9 * eX)
+    // Klip hra, ak vstup obsahuje B: bud je rozdiel vyrazne slabsi ako vstup, alebo (pri odposluchu
+    // a hrani cez zaciatok slucky) vstup s B silno koreluje - ziva gitara s B presne v case nekoreluje.
+    const bool clipPresent = eD < 0.9 * eX
+                              || (xb > 0.6 * eB && xb > 0.25 * std::sqrt (eX * eB));
+
+    if (bridgeAudible && clipPresent)
     {
         // Klip uz hra - premostenie konci, nic sa nezdvoji. V bloku, kde sa novy graf prepol,
         // zvykne klip zacat az o 1-2 vzorky neskor (presne nuly) - tie doplnime z pamate.
