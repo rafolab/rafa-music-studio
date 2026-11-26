@@ -1,0 +1,58 @@
+RAFA MUSIC STUDIO – verzia 1.0.0-rc1 (kandidát na stabilnú verziu)
+=====================================================================
+
+1. INŠTALÁCIA / AKTUALIZÁCIA
+----------------------------
+1) Zatvor RAFA MUSIC STUDIO, ak beží.
+2) ZÁLOHA starej verzie: priečinok so starým programom premenuj,
+   napríklad na  RAFA-MUSIC-STUDIO-2E7-zaloha .
+   (Ak by nová verzia nefungovala, stačí spustiť program zo zálohy.)
+3) ZIP súbor najprv ULOŽ na disk (napr. do Stiahnuté), potom naň klikni
+   pravým tlačidlom → "Extrahovať všetko…". Exe priamo zo ZIPu nespúšťaj.
+4) V rozbalenom priečinku spusti  RAFA MUSIC STUDIO.exe .
+   Ak Windows ukáže modré okno "Windows ochránil počítač":
+   "Ďalšie informácie" → "Spustiť aj tak".
+
+Tvoje skladby sú v Dokumenty\RAFA MUSIC STUDIO (Rozpracované a Skladby).
+Aktualizácia programu ich NEMAŽE a staré projekty sa otvoria aj v 1.0.
+
+Kontrola verzie: SETTINGS → Diagnostika. Na začiatku musí byť
+"Verzia aplikacie: 1.0.0-rc1 (commit 409ecd1)".
+
+
+2. KRÁTKY NÁVOD
+---------------
+Ovládanie: všetko sa dá myšou. Kolieskom DATA vyberáš v menu, Enter
+potvrdzuje. V menu stačí ukázať myšou na položku a raz kliknúť.
+
+Nahrávanie slučky (LOOP ako looper):
+  1) PROJECT → Nová skladba.
+  2) Nastav TEMPO, potom SETTINGS → Dĺžka slučky… (1, 2, 4, 8, 16 taktov)
+     a Odpočítanie… (0, 1 alebo 2 takty).
+  3) Zapni LOOP, stlač REC. Po odpočítaní sa nahrá presne nastavená dĺžka
+     a slučka hneď hrá dokola – bez medzery.
+  4) Ďalšia vrstva: kým slučka hrá, vyber ďalšiu stopu a stlač REC.
+     Nahrávanie začne od najbližšieho začiatku slučky, prehrávanie sa
+     NEZASTAVÍ. Vrstva sa nahrá presne na jedno kolo.
+  5) STOP zastaví všetko.
+
+UNDO / REDO: vráti/obnoví posledný krok (Ctrl+Z / Ctrl+Y).
+Odstránenie stopy: TRACKS → Odstrániť stopu, potvrdíš na displeji.
+  Omylom zmazanú stopu vrátiš cez UNDO.
+Fadery, PAN, M (mute) a S (solo) ovládaš myšou.
+Metronóm sa do nahrávky gitary nenahráva.
+
+Ukladanie: PROJECT → Uložiť ako… (napíš meno, tlačidlo ULOŽIŤ).
+  Program potvrdí uloženie na displeji. Priebežne ukladá aj sám.
+Otvorenie: PROJECT → Otvoriť skladbu…
+Export pre Cakewalk/Sonar: PROJECT → Exportovať stopy (WAV pre Sonar)
+  alebo Exportovať mix (WAV); "Otvoriť priečinok exportu" ukáže súbory.
+
+Nastavenia (SETTINGS):
+  Buffer – ak počuť praskanie, zvýš hodnotu.
+  Posun nahrávky – doladenie, ak nahraná gitara mierne mešká/predbieha.
+  Plynulé prvé opakovanie slučky – má byť ZAP (odporúčané).
+  Výpadky zvuku – počítadlo výpadkov (má zostať 0).
+  Diagnostika – správa o programe; pri probléme ju pošli Claudovi.
+
+EFFECTS: efekty budú až vo verzii 1.1 (tlačidlo zatiaľ ukáže iba oznam).
