@@ -3,6 +3,7 @@
 #include "Texts.h"
 #include "RafaLookAndFeel.h"
 #include "TrackListComponent.h"
+#include "LoopBridge.h"
 
 // docasne merania casu (len ked je nastavena premenna prostredia RAFA_TIMING)
 #define RAFA_T(msg) do { static const bool on_ = juce::SystemStats::getEnvironmentVariable ("RAFA_TIMING", {}).isNotEmpty(); \
@@ -150,7 +151,7 @@ private:
     void createNewSong();
     void openSong();
     void loadEdit (const juce::File&);
-    void saveEdit();
+    void saveEdit (bool automatic = false);
     void closeEdit();
 
     // --- vstupy a zariadenia ---
@@ -200,6 +201,38 @@ private:
         int missingSamples = 0;
     };
     LoopFlattenResult flattenLoopTakes (te::WaveAudioClip&);
+
+    // --- dalsia vrstva bez prerusenia prehravania ("letmy" zaznam od najblizsieho LOOP IN) ---
+    struct FlyingLayer
+    {
+        bool active = false;
+        bool started = false;               // zaznam uz bezi (inak caka, kym Tracktion spracuje zapnutie vstupu)
+        bool stopping = false;
+        juce::uint32 preparedMs = 0;
+        te::TimePosition punchStart;        // necyklicky cas zaciatku prechodu
+        te::EditItemID trackID;
+        te::InputDeviceInstance* instance = nullptr;
+        double loopStart = 0.0, loopEnd = 0.0;
+    } fly;
+    bool recNow() const   { return edit != nullptr && (edit->getTransport().isRecording() || fly.active); }
+    bool startFlyingLayer();
+    void beginFlyingRecording();
+    void cancelFlyingLayer();
+    void flyingLayerStopped (tl::expected<te::Clip::Array, juce::String>, bool cancelled);
+    void checkFlyingLayer();
+
+    // --- plynule prve opakovanie slucky (premostenie z pamate, LoopBridge.h) ---
+    te::Plugin::Ptr bridgePlugin;
+    bool bridgeArmed = false;
+    juce::uint32 bridgeArmedMs = 0;
+    juce::String lastBridgeReport;
+    juce::AudioBuffer<float> bridgeDebugCopy;
+    bool smoothLoopEnabled() const;
+    void setSmoothLoop (bool);
+    void installLoopBridge (te::AudioTrack&);
+    void armLoopBridge (double loopStart, double loopEnd, juce::int64 knownStartFrame = -1);
+    void maintainLoopBridge();
+    void removeLoopBridge();
     double snapToNearestBeat (double seconds) const;
     double getSecondsPerBar() const;
     juce::var buildTempoLoopState();

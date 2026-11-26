@@ -73,7 +73,7 @@ te::AudioTrack* MainComponent::insertTrackFromState (const juce::ValueTree& stat
 //==============================================================================
 void MainComponent::deleteTrackWithHistory (te::AudioTrack& t)
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return;
 
     HistoryEntry e;
@@ -96,7 +96,7 @@ bool MainComponent::undoLast()
     if (edit == nullptr || undoStack.empty())
         return false;
 
-    if (edit->getTransport().isRecording())
+    if (recNow())
     {
         setStatus (sk ("Počas nahrávania sa nedá vracať – najprv dokonči pokus."), RafaColours::accent);
         return false;
@@ -154,7 +154,7 @@ bool MainComponent::undoLast()
 
 bool MainComponent::redoLast()
 {
-    if (edit == nullptr || redoStack.empty() || edit->getTransport().isRecording())
+    if (edit == nullptr || redoStack.empty() || recNow())
         return false;
 
     auto e = redoStack.back();

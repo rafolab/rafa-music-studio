@@ -33,7 +33,7 @@ jobs:
         shell: pwsh
         run: |
           $wv = ("$env:RUNNER_TEMP/webview2").Replace('\','/')
-          cmake -S . -B build -A x64 "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$wv"
+          cmake -S . -B build -A x64 "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$wv" "-DRAFA_COMMIT=$($env:GITHUB_SHA.Substring(0,7))"
 
       - name: Kompilacia
         run: cmake --build build --config Release --parallel

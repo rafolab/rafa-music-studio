@@ -55,7 +55,7 @@ void MainComponent::initTempoDefaults()
 //==============================================================================
 void MainComponent::setTempoBpm (double bpm)
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return;
 
     bpm = juce::jlimit (minTempo, maxTempo, std::round (bpm * 10.0) / 10.0);
@@ -73,7 +73,7 @@ void MainComponent::setTempoBpm (double bpm)
 
 void MainComponent::setTimeSignature (int numerator, int denominator)
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return;
 
     numerator   = juce::jlimit (2, 7, numerator);
@@ -104,7 +104,7 @@ void MainComponent::setMetronomeVolume (double volume)
 
 void MainComponent::setCountInBars (int bars)
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return;
 
     edit->setCountInMode (bars >= 2 ? te::Edit::CountIn::twoBar
@@ -116,7 +116,7 @@ void MainComponent::setCountInBars (int bars)
 //==============================================================================
 void MainComponent::setLoopOn (bool on)
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return;
 
     auto& tr = edit->getTransport();
@@ -136,7 +136,7 @@ void MainComponent::setLoopOn (bool on)
 
 void MainComponent::setLoopRangeSeconds (double start, double end)
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return;
 
     start = juce::jmax (0.0, start);
@@ -166,7 +166,7 @@ void MainComponent::setLoopBars (int bars)
 
 void MainComponent::setLoopPointAtPlayhead (bool isStart)
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return;
 
     auto& tr = edit->getTransport();
@@ -228,9 +228,19 @@ void MainComponent::checkLoopRecordingPass()
     auto pos = tr.getPosition().inSeconds();
     auto loopStart = tr.getLoopRange().getStart().inSeconds();
 
+
     // slucka sa pretocila (LOOP OUT -> LOOP IN) = jeden prechod je nahraty.
     // Zastavime ~50 ms po pretoceni (motor sam dopise aj vzorky kompenzacie latencie), aby koniec vrstvy nechybal (kompenzacia latencie);
     // Tracktion klip oreze presne na LOOP OUT a zvysok kratsi ako 0,1 s zahodi.
+    // plynule prve opakovanie: kratko pred koncom prechodu pripravit zaciatok slucky v pamati
+    {
+        const auto loopEndSec = tr.getLoopRange().getEnd().inSeconds();
+
+        if (! loopWrapped && ! bridgeArmed && bridgePlugin != nullptr
+             && pos >= loopEndSec - 0.40 && pos < loopEndSec - 0.04 && pos > loopStart)
+            armLoopBridge (loopStart, loopEndSec);
+    }
+
     if (pos < lastLoopPosition - 0.25)
     {
         loopWrapped = true;
@@ -350,6 +360,21 @@ MainComponent::LoopFlattenResult MainComponent::flattenLoopTakes (te::WaveAudioC
     for (int c = 0; c < channels; ++c)
         pass.copyFrom (c, 0, all, c, start, available);
 
+    // kontrola (len pri meraniach): sedi premostenie zo suboru s finalnym prechodom slucky?
+    if (bridgeDebugCopy.getNumSamples() > 0)
+    {
+        int bestLag = 0; double best = 1.0e9;
+        for (int lag = -4; lag <= 4; ++lag)
+        {
+            double d = 0.0;
+            for (int i = 8; i < juce::jmin (bridgeDebugCopy.getNumSamples(), length) - 8; ++i)
+                d += std::abs (bridgeDebugCopy.getSample (0, i) - pass.getSample (0, i + lag));
+            if (d < best) { best = d; bestLag = lag; }
+        }
+        RAFA_T ("bridgeCheck lag=" + juce::String (bestLag) + " diff=" + juce::String (best, 6));
+        bridgeDebugCopy.setSize (0, 0);
+    }
+
     // 4) zapis noveho suboru a jeho overenie (zapis, dlzka, citatelnost)
     auto outFile = files[0].getSiblingFile (files[0].getFileNameWithoutExtension() + "_slucka")
                            .withFileExtension ("wav").getNonexistentSibling (false);
@@ -439,7 +464,7 @@ juce::var MainComponent::buildTempoLoopState()
     loop->setProperty ("end", range.getEnd().inSeconds());
     loop->setProperty ("lengthBars", barLen > 0 ? std::round (range.getLength().inSeconds() / barLen * 100.0) / 100.0 : 0.0);
     loop->setProperty ("canRecord", range.getLength().inSeconds() >= minLoopSeconds);
-    loop->setProperty ("recordingPass", loopRecordPass && tr.isRecording());
+    loop->setProperty ("recordingPass", (loopRecordPass && tr.isRecording()) || fly.active);
     obj->setProperty ("loop", loop.release());
 
     // takt a doba prehravacej hlavy (1 = prva), napr. pre blikanie LED metronomu
@@ -451,4 +476,420 @@ juce::var MainComponent::buildTempoLoopState()
     obj->setProperty ("musicalPosition", position.release());
 
     return juce::var (obj.release());
+}
+
+//==============================================================================
+// Plynule prve opakovanie slucky - pozri LoopBridge.h
+bool MainComponent::smoothLoopEnabled() const   { return settings->getBoolValue ("smoothFirstRepeat", true); }
+
+void MainComponent::setSmoothLoop (bool on)
+{
+    settings->setValue ("smoothFirstRepeat", on);
+    settings->saveIfNeeded();
+    setStatus (on ? sk ("Plynulé prvé opakovanie slučky: ZAP") : sk ("Plynulé prvé opakovanie slučky: VYP"), RafaColours::play);
+}
+
+void MainComponent::installLoopBridge (te::AudioTrack& track)
+{
+    removeLoopBridge();
+
+    if (! smoothLoopEnabled())
+        return;
+
+    // pocet kanalov nahravky = pocet kanalov vstupu nahravania (mono gitara / stereo par)
+    int channels = 1;
+
+    for (auto* instance : edit->getAllInputDevices())
+        if (auto* wi = dynamic_cast<te::WaveInputDevice*> (&instance->getInputDevice()))
+            if (instance->getTargets().contains (track.itemID))
+                channels = wi->isStereoPair() ? 2 : 1;
+
+    auto plugin = edit->getPluginCache().createNewPlugin (LoopBridgePlugin::create());
+
+    if (auto* bp = dynamic_cast<LoopBridgePlugin*> (plugin.get()))
+    {
+        bp->setChannels (channels);   // pred vlozenim - graf sa postavi uz so spravnym poctom kanalov
+        track.pluginList.insertPlugin (plugin, 0, nullptr);
+        bridgePlugin = plugin;
+    }
+
+    RAFA_T ("bridge installed " + juce::String (bridgePlugin != nullptr ? "ok" : "FAILED"));
+}
+
+void MainComponent::armLoopBridge (double loopStart, double loopEnd, juce::int64 knownStartFrame)
+{
+    bridgeArmed = true;   // len jeden pokus za prechod
+    auto* bp = dynamic_cast<LoopBridgePlugin*> (bridgePlugin.get());
+
+    if (bp == nullptr || edit == nullptr)
+        return;
+
+    juce::File file;
+
+    for (auto* instance : edit->getAllInputDevices())
+    {
+        auto f = instance->getRecordingFile (recordingTrackID);
+
+        if (f != juce::File())
+        {
+            file = f;
+            break;
+        }
+    }
+
+    // zaciatok slucky (najviac 0,5 s) - nahraty pred viac ako sekundou, je uz na disku
+    const double bridgeSec = juce::jmin (0.5, (loopEnd - loopStart) - 0.6);
+    juce::AudioBuffer<float> audio;
+    double rate = 0.0;
+    juce::int64 timeRef = -1;
+    juce::String error;
+
+    if (file == juce::File() || bridgeSec < 0.1)
+        error = "nahravka nie je dostupna";
+    else
+    {
+        // prva citacia: zistime frekvenciu a TimeReference (zaciatok nahravky v case skladby)
+        juce::AudioBuffer<float> probe;
+
+        if (GrowingWavReader::read (file, 0, 1, probe, rate, timeRef, error))
+        {
+            // Zaciatok suboru = zaciatok nahravania v Tracktione: pri odpocitani je to LOOP IN mínus
+            // (pocet dob odpocitania + 0,5 doby), inak LOOP IN (TransportControl::performRecord).
+            // Ak subor uz nesie casovu znacku BWAV, pouzije sa ta.
+            juce::int64 fileStart = timeRef;
+            const bool countInUsed = edit->getNumCountInBeats() > 0;
+
+            if (fileStart < 0)
+            {
+                auto& ts = edit->tempoSequence;
+                const double countIn = edit->getNumCountInBeats();
+                auto startTime = te::TimePosition::fromSeconds (loopStart);
+
+                if (countIn > 0)
+                    startTime = ts.toTime (ts.toBeats (startTime) - te::BeatDuration::fromBeats (countIn + 0.5));
+
+                fileStart = (juce::int64) std::llround (startTime.inSeconds() * rate);
+            }
+
+            // Tracktion zaokruhli posun klipu o 1 vzorku nadol (overene porovnanim s finalnym prechodom)
+            const auto startFrame = knownStartFrame >= 0 ? knownStartFrame
+                                                         : (juce::int64) std::llround (loopStart * rate) - fileStart - (countInUsed ? 1 : 0);
+            GrowingWavReader::read (file, startFrame, (int) std::llround (bridgeSec * rate), audio, rate, timeRef, error);
+            timeRef = fileStart;
+            bridgeDebugCopy.makeCopyOf (audio);
+        }
+    }
+
+    if (error.isNotEmpty() || audio.getNumSamples() == 0)
+    {
+        lastBridgeReport = "premostenie nepripravene: " + error;
+        RAFA_T (lastBridgeReport);
+        return;   // bez premostenia: spravanie ako doteraz
+    }
+
+    bp->arm (std::move (audio), rate, te::TimePosition::fromSeconds (loopStart));
+    bridgeArmedMs = juce::Time::getMillisecondCounter();
+    RAFA_T ("bridge armed len=" + juce::String (bridgeSec, 3) + " timeRef=" + juce::String (timeRef));
+}
+
+void MainComponent::maintainLoopBridge()
+{
+    if (bridgePlugin == nullptr || edit == nullptr)
+        return;
+
+    auto& tr = edit->getTransport();
+    auto* bp = dynamic_cast<LoopBridgePlugin*> (bridgePlugin.get());
+
+    if (loopRecordPass || tr.isRecording() || pendingRecordingCheck || fly.active)
+        return;   // nahravanie / vkladanie klipu este bezi
+
+    const auto res = bp != nullptr ? bp->getResult() : LoopBridgePlugin::Result::idle;
+    const bool finished = res == LoopBridgePlugin::Result::handedOver || res == LoopBridgePlugin::Result::timedOut;
+    const bool stale = ! tr.isPlaying() || ! bridgeArmed || res == LoopBridgePlugin::Result::idle
+                       || juce::Time::getMillisecondCounter() - bridgeArmedMs > 4000;
+
+    if (finished || stale)
+    {
+        removeLoopBridge();
+    }
+}
+
+void MainComponent::removeLoopBridge()
+{
+    if (bridgePlugin != nullptr)
+    {
+        if (auto* bp = dynamic_cast<LoopBridgePlugin*> (bridgePlugin.get()))
+        {
+            if (bridgeArmed)
+            {
+                static const char* names[] = { "nic", "caka", "hra", "odovzdane klipu", "okno uplynulo" };
+                lastBridgeReport = "premostenie: " + juce::String (names[(int) bp->getResult()]) + ", zahrane "
+                                   + juce::String (bp->getBridgedSamples()) + " vzoriek";
+                RAFA_T (lastBridgeReport);
+            }
+
+            bp->disarm();
+        }
+
+        bridgePlugin->deleteFromParent();
+        bridgePlugin = nullptr;
+    }
+
+    bridgeArmed = false;
+}
+
+//==============================================================================
+// Dalsia vrstva bez prerusenia: slucka hra dalej, nahravanie zacne presne na najblizsom LOOP IN
+// a skonci presne po jednom prechode. Pouziva priame API vstupu Tracktionu s necyklickym casom
+// (TransportControl::record by pri hrajucej slucke zastavil prehravanie a odpocitaval).
+bool MainComponent::startFlyingLayer()
+{
+    auto& tr = edit->getTransport();
+    auto* ctx = tr.getCurrentPlaybackContext();
+
+    if (ctx == nullptr)
+        return false;
+
+    auto* track = prepareTrackForRecording();
+
+    if (track == nullptr)
+        return true;   // chyba uz bola ohlasena
+
+    te::InputDeviceInstance* inst = nullptr;
+
+    for (auto* i : edit->getAllInputDevices())
+        if (i->getInputDevice().getDeviceType() == te::InputDevice::waveDevice
+             && i->getTargets().contains (track->itemID) && i->isRecordingEnabled (track->itemID))
+            inst = i;
+
+    if (inst == nullptr)
+    {
+        setStatus (sk ("Nahrávanie sa nespustilo: vstup nie je pripravený."), RafaColours::record);
+        return true;
+    }
+
+    currentRecordingTrack = track;
+    recordingTrackID = track->itemID;
+    clipsBeforeRecording = track->getClips().size();
+    pendingRecordingCheck = false;
+    recordingStartedMs = juce::Time::getMillisecondCounter();
+
+    fly = {};
+    fly.active = true;
+    fly.trackID = track->itemID;
+    fly.instance = inst;
+    fly.preparedMs = juce::Time::getMillisecondCounter();
+
+    installLoopBridge (*track);
+    trackList.refreshIfChanged();
+    trackList.setRecordingTrack (track);
+    setStatus (sk ("● Vrstva do stopy „") + track->getName() + sk ("“ sa nahrá od najbližšieho začiatku slučky – hraj ďalej."),
+               RafaColours::record);
+    updateTransportButtons();
+    return true;
+}
+
+// Druhy krok (o ~80 ms): Tracktion medzitym asynchronne spracoval zapnutie vstupu na stope
+// (InputDeviceInstance::updateRecordingStatus) - keby sme zaznam spustili skor, hned by ho ukoncil.
+void MainComponent::beginFlyingRecording()
+{
+    auto& tr = edit->getTransport();
+    auto* ctx = tr.getCurrentPlaybackContext();
+    auto* inst = fly.instance;
+
+    if (ctx == nullptr || inst == nullptr || ! tr.isPlaying() || ! tr.looping)
+    {
+        fly.active = false;
+        trackList.setRecordingTrack (nullptr);
+        currentRecordingTrack = nullptr;
+        removeLoopBridge();
+        setStatus (sk ("Vrstva sa nenahrala – slučka už nehrá."), RafaColours::accent);
+        updateTransportButtons();
+        return;
+    }
+
+    const auto loop = tr.getLoopRange();
+    const double L = loop.getLength().inSeconds();
+
+    // necyklicky cas najblizsieho LOOP IN v RovNAKOM prepocte, akym Tracktion casuje vstupne bloky
+    // (cas zvukoveho prudu -> cas skladby); (U - P) je pocas prechodu konstantne
+    const double streamTime = engine.getDeviceManager().getCurrentStreamTime();
+    const double P = ctx->globalStreamTimeToEditTime (streamTime).inSeconds();
+    const double U = ctx->globalStreamTimeToEditTimeUnlooped (streamTime).inSeconds();
+    double toEnd = loop.getEnd().inSeconds() - P;
+
+    if (toEnd < 0.15)   // prilis tesne pred koncom - zacneme az o jeden prechod neskor
+        toEnd += L;
+
+    // Merania (spatna slucka vystup -> vstup, bloky 256/512/1024): bez korekcie leti zaznam o presne
+    // jeden zvukovy blok skor nez fyzicky spravna poloha a nez prva vrstva. Zaciatok preto posunieme
+    // o jeden blok dopredu - vrstvy potom sedia navzajom aj s metronomom.
+    double blockSec = 0.0;
+    if (auto* dev = engine.getDeviceManager().deviceManager.getCurrentAudioDevice())
+        if (dev->getCurrentSampleRate() > 0)
+            blockSec = dev->getCurrentBufferSizeSamples() / dev->getCurrentSampleRate();
+
+    const auto punch = te::TimePosition::fromSeconds (U + toEnd - blockSec);
+
+    te::InputDeviceInstance::RecordingParameters rp;
+    rp.punchRange = { punch, te::Edit::getMaximumEditEnd() };
+    rp.targets = { fly.trackID };
+
+    std::vector<std::unique_ptr<te::InputDeviceInstance::RecordingContext>> contexts;
+    juce::String error;
+
+    for (auto& prepared : inst->prepareToRecord (rp))
+    {
+        if (prepared.has_value())
+            contexts.push_back (std::move (*prepared));
+        else
+            error = prepared.error();
+    }
+
+    if (contexts.empty())
+    {
+        fly.active = false;
+        trackList.setRecordingTrack (nullptr);
+        currentRecordingTrack = nullptr;
+        removeLoopBridge();
+        setStatus (sk ("Nahrávanie sa nespustilo: ") + error, RafaColours::record);
+        updateTransportButtons();
+        return;
+    }
+
+    fly.started = true;
+    fly.punchStart = punch;
+    fly.loopStart = loop.getStart().inSeconds();
+    fly.loopEnd = loop.getEnd().inSeconds();
+
+    inst->startRecording (std::move (contexts));
+
+    // koniec presne po jednom prechode (+50 ms; motor dopise aj vzorky kompenzacie latencie)
+    te::InputDeviceInstance::StopRecordingParameters sp;
+    sp.targetsToStop = { fly.trackID };
+    sp.unloopedTimeToEndRecording = punch + te::TimeDuration::fromSeconds (L + 0.05);
+    sp.isLooping = false;
+    sp.markedRange = loop;
+
+    juce::Component::SafePointer<MainComponent> safe (this);
+    inst->stopRecording (sp, [safe] (tl::expected<te::Clip::Array, juce::String> res)
+    {
+        if (safe != nullptr)
+            safe->flyingLayerStopped (std::move (res), false);
+    });
+
+    RAFA_T ("fly start toEnd=" + juce::String (toEnd, 3) + " punch=" + juce::String (punch.inSeconds(), 3)
+            + " adjust=" + juce::String (engine.getDeviceManager().getRecordAdjustmentMs() * 48.0, 1)
+            + " devIn=" + juce::String (engine.getDeviceManager().deviceManager.getCurrentAudioDevice()->getInputLatencyInSamples())
+            + " devOut=" + juce::String (engine.getDeviceManager().deviceManager.getCurrentAudioDevice()->getOutputLatencyInSamples())
+            + " block=" + juce::String (engine.getDeviceManager().deviceManager.getCurrentAudioDevice()->getCurrentBufferSizeSamples()));
+}
+
+void MainComponent::cancelFlyingLayer()
+{
+    if (! fly.active || fly.stopping || fly.instance == nullptr || edit == nullptr)
+        return;
+
+    if (! fly.started)   // zaznam este nezacal - len zrusit pripravu
+    {
+        fly.active = false;
+        trackList.setRecordingTrack (nullptr);
+        currentRecordingTrack = nullptr;
+        removeLoopBridge();
+        setStatus (sk ("Vrstva zrušená."), RafaColours::accent);
+        updateTransportButtons();
+        return;
+    }
+
+    fly.stopping = true;
+    auto* ctx = edit->getTransport().getCurrentPlaybackContext();
+
+    te::InputDeviceInstance::StopRecordingParameters sp;
+    sp.targetsToStop = { fly.trackID };
+    sp.unloopedTimeToEndRecording = ctx != nullptr ? ctx->getUnloopedPosition() : fly.punchStart;
+    sp.isLooping = false;
+    sp.markedRange = edit->getTransport().getLoopRange();
+
+    fly.instance->prepareToStopRecording (sp.targetsToStop);
+    auto res = fly.instance->stopRecording (sp);   // vyvola aj ulozeny callback (flyingLayerStopped)
+
+    if (fly.active)   // callback sa nevolal (napr. nahravanie este nezacalo)
+        flyingLayerStopped (std::move (res), true);
+}
+
+void MainComponent::flyingLayerStopped (tl::expected<te::Clip::Array, juce::String> res, bool cancelled)
+{
+    if (! fly.active)
+        return;
+
+    cancelled = cancelled || fly.stopping;
+    const double L = fly.loopEnd - fly.loopStart;
+    fly.active = false;
+    trackList.setRecordingTrack (nullptr);
+    currentRecordingTrack = nullptr;
+    RAFA_T ("fly stopped cancelled=" + juce::String ((int) cancelled) + " ok=" + juce::String ((int) res.has_value())
+            + " clips=" + juce::String (res.has_value() ? (int) res->size() : -1));
+
+    if (! res.has_value())
+    {
+        setStatus (sk ("Vrstva sa nenahrala: ") + res.error(), RafaColours::record);
+        updateTransportButtons();
+        return;
+    }
+
+    for (auto& c : *res)
+    {
+        auto* clip = dynamic_cast<te::WaveAudioClip*> (c);
+
+        if (clip == nullptr)
+            continue;
+
+        const double recorded = te::AudioFile (engine, clip->getOriginalFile()).getLength();
+
+        if (recorded < L - 0.005)
+        {
+            // neuplny prechod (STOP / REC pocas nahravania): klip odstranime, subor ostava v priecinku
+            clip->removeFromParent();
+            setStatus (cancelled ? sk ("Vrstva zrušená pred dokončením prechodu (nahrávka ostala v priečinku skladby).")
+                                 : sk ("Vrstva je kratšia ako slučka – nepoužitá (nahrávka ostala v priečinku skladby)."),
+                       RafaColours::accent);
+            continue;
+        }
+
+        // subor zacina presne na LOOP IN prechodu - klip na slucku, posun 0
+        clip->setPosition ({ { te::TimePosition::fromSeconds (fly.loopStart), te::TimePosition::fromSeconds (fly.loopEnd) },
+                             te::TimeDuration() });
+        pendingRecordingCheck = true;   // dalej ako bezna vrstva (historia, ulozenie, hlasenie)
+        recordingCheckDeadline = juce::Time::getMillisecondCounter() + 4000;
+    }
+
+    updateTransportButtons();
+}
+
+// casovac: pripravit premostenie ku koncu prechodu letmej vrstvy
+void MainComponent::checkFlyingLayer()
+{
+    if (! fly.active || fly.stopping || edit == nullptr)
+        return;
+
+    if (! fly.started)
+    {
+        if (juce::Time::getMillisecondCounter() - fly.preparedMs >= 80)
+            beginFlyingRecording();
+        return;
+    }
+
+    if (bridgeArmed || bridgePlugin == nullptr)
+        return;
+
+    auto* ctx = edit->getTransport().getCurrentPlaybackContext();
+
+    if (ctx == nullptr)
+        return;
+
+    const double U = ctx->globalStreamTimeToEditTimeUnlooped (engine.getDeviceManager().getCurrentStreamTime()).inSeconds();
+    const double passEnd = fly.punchStart.inSeconds() + (fly.loopEnd - fly.loopStart);
+
+    if (U >= passEnd - 0.40 && U < passEnd - 0.04 && U > fly.punchStart.inSeconds() + 0.6)
+        armLoopBridge (fly.loopStart, fly.loopEnd, 0);   // subor zacina presne na LOOP IN
 }

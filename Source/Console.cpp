@@ -107,7 +107,7 @@ void MainComponent::selectTrack (const juce::String& trackId)
 
 void MainComponent::addEmptyTrack()
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return;
 
     auto count = te::getAudioTracks (*edit).size();

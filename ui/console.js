@@ -117,7 +117,8 @@
       case "loop": send("toggleLoop"); break;
       case "metroOn": send("setMetronome", { on: !(st && st.metronome && st.metronome.on) }); break;
       case "layerAdd": if (needs(4, "Pridať stopu")) { send("trackAdd"); flash(id); } break;
-      case "project": case "tracks": case "effects": case "settings": toggleMenu(id); break;
+      case "effects": if (menu) closeMenu(); flashValue("Efekty budú vo verzii 1.1", 2200); flash(id); break;
+      case "project": case "tracks": case "settings": toggleMenu(id); break;
     }
   }
 
@@ -517,7 +518,7 @@
         { t: "Pridať stopu", act: () => send("trackAdd"), dis: !editing },
         { t: "Vybrať stopu…", sub: () => tracks.map((x, i) => ({ t: (i + 1) + "  " + x.name, act: () => pickTrack(x) })), dis: !tracks.length },
         { t: "Premenovať stopu", act: () => renameTrack(), dis: !t },
-        { t: "Odstrániť stopu  (Delete)", act: () => t && send("trackDelete", { trackId: t.id }), dis: !t || !editing },
+        { t: "Odstrániť stopu  (Delete)", act: () => t && askDeleteTrack(t), dis: !t || !editing },
         { t: "Panel stôp  (T)", act: () => window.RafaPanel && RafaPanel.toggle() },
         ...(tracks.length > 4 ? [{ t: "Ďalšie kanály (stopy " + (((page + 1) % Math.ceil(tracks.length / 4)) * 4 + 1) + "–)", act: () => { page = (page + 1) % Math.ceil(tracks.length / 4); } }] : []) ] },
       effects: { title: "EFFECTS", items: [ { t: "Efekty pribudnú v ďalšej etape.", dis: true } ] },
@@ -531,6 +532,7 @@
         { t: "Odpočítanie…", sub: () => [0, 1, 2].map(b => ({ t: b === 0 ? "bez odpočítania" : b + (b === 1 ? " takt" : " takty"), act: () => send("setCountIn", { bars: b }) })) },
         { t: "Buffer (praskanie): " + (dev.buffer ? dev.buffer + " vzoriek · " + bufMs(dev.buffer) : "–") + "…", sub: () => (dev.bufferSizes || []).map(b => ({ t: (b === dev.buffer ? "● " : "  ") + b + " vzoriek · " + bufMs(b) + (b >= 512 && b <= 1024 ? "  (bezpečné)" : b < 256 ? "  (nízka odozva, riziko praskania)" : ""), act: () => send("setBufferSize", { samples: b }) })), dis: rec() || !(dev.bufferSizes && dev.bufferSizes.length) },
         { t: "Posun nahrávky: " + fmtOffset(dev.recordOffsetMs || 0) + "…", sub: () => [-50, -40, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 40, 50].map(ms => ({ t: (Math.round(dev.recordOffsetMs || 0) === ms ? "● " : "  ") + fmtOffset(ms) + (ms === 0 ? "  (predvolené)" : ms > 0 ? "  (nahrávka sa posunie skôr)" : "  (nahrávka sa posunie neskôr)"), act: () => send("setRecordOffset", { ms }) })), dis: rec() },
+ { t: "Plynulé prvé opakovanie slučky: " + (dev.smoothLoop === false ? "VYP" : "ZAP"), act: () => send("setSmoothLoop", { on: dev.smoothLoop === false }), keep: true, dis: rec() },
         { t: "Výpadky zvuku: " + (dev.dropouts || 0) + " · CPU max " + (dev.cpuPeak || 0) + " % (vynulovať)", act: () => send("resetDropouts"), keep: true },
         { t: "Diagnostika", act: () => send("runDiagnostics"), dis: !(st && st.busy && st.busy.diagnosticsAllowed !== false) } ] },
     };
@@ -679,7 +681,10 @@
     const t = tr || selectedTrack(); if (!t) return;
     askText("PREMENOVAŤ STOPU", t.name, (v) => send("trackRename", { trackId: t.id, name: v }));
   }
-  function deleteSelected () { const t = selectedTrack(); if (t && !rec()) send("trackDelete", { trackId: t.id }); }
+  function askDeleteTrack (t) {
+    confirmBox("ODSTRÁNIŤ STOPU „" + t.name + "“?", "Vrátiť sa dá cez UNDO. Zvukový súbor ostane v priečinku skladby.", () => send("trackDelete", { trackId: t.id }));
+  }
+  function deleteSelected () { const t = selectedTrack(); if (t && !rec()) askDeleteTrack(t); }
 
   // ------------------------------------------------------------------ klávesnica
   addEventListener("keydown", (ev) => {

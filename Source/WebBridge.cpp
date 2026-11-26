@@ -179,14 +179,14 @@ void MainComponent::handleWebCommand (const juce::var& message)
     else if (command == "rewind")            rewind();
     else if (command == "seek")
     {
-        if (! edit->getTransport().isRecording())
+        if (! recNow())
             edit->getTransport().setPosition (te::TimePosition::fromSeconds (juce::jmax (0.0, (double) args.getProperty ("seconds", 0.0))));
     }
     else if (command == "selectInput")
     {
         auto index = inputDeviceIDs.indexOf (args.getProperty ("id", {}).toString());
 
-        if (index >= 0 && ! edit->getTransport().isRecording())
+        if (index >= 0 && ! recNow())
             inputCombo.setSelectedId (index + 1, juce::sendNotificationSync);
     }
     else if (command == "setMonitoring")
@@ -212,18 +212,21 @@ void MainComponent::handleWebCommand (const juce::var& message)
     }
     else if (command == "trackDelete")
     {
+        // potvrdenie robi displej konzoly (bez systemoveho okna); zmazanie ide do historie (UNDO ho vrati)
         if (auto* t = findTrackById (args.getProperty ("trackId", {}).toString()))
-            deleteTrack (*t);
+            deleteTrackWithHistory (*t);
     }
-    else if (command == "newSong")           { if (edit == nullptr || ! edit->getTransport().isRecording()) createNewSong(); }
-    else if (command == "openSong")          { if (edit == nullptr || ! edit->getTransport().isRecording()) openSong(); }
+    else if (command == "newSong")           { if (edit == nullptr || ! recNow()) createNewSong(); }
+    else if (command == "openSong")          { if (edit == nullptr || ! recNow()) openSong(); }
     else if (command == "openSongFolder")    { if (editFile != juce::File()) editFile.getParentDirectory().startAsProcess(); }
-    else if (command == "exportMix")         { if (! edit->getTransport().isRecording()) exportMix(); }
-    else if (command == "openAudioSettings") { if (edit == nullptr || ! edit->getTransport().isRecording()) showAudioSettings(); }
+    else if (command == "exportMix")         { if (! recNow()) exportMix(); }
+    else if (command == "openAudioSettings") { if (edit == nullptr || ! recNow()) showAudioSettings(); }
     else if (command == "runDiagnostics")    runDiagnostics();
     else if (command == "setBufferSize")     setBufferSize ((int) args.getProperty ("samples", 512));
-    else if (command == "setRecordOffset")   { if (! edit->getTransport().isRecording()) setRecordOffsetMs ((double) args.getProperty ("ms", 0.0)); }
+    else if (command == "setRecordOffset")   { if (! recNow()) setRecordOffsetMs ((double) args.getProperty ("ms", 0.0)); }
     else if (command == "resetDropouts")     resetAudioDropouts();
+    else if (command == "testLog")           RAFA_T ("JS " + args.getProperty ("text", {}).toString());   // len pri automatickych testoch
+    else if (command == "setSmoothLoop")     setSmoothLoop ((bool) args.getProperty ("on", true));
     // --- API v2: tempo, metronom, LOOP ---
     else if (command == "setTempo")           setTempoBpm ((double) args.getProperty ("bpm", 120.0));
     else if (command == "setTimeSignature")   setTimeSignature ((int) args.getProperty ("numerator", 4), (int) args.getProperty ("denominator", 4));
@@ -263,7 +266,7 @@ void MainComponent::handleWebCommand (const juce::var& message)
     else if (command == "openExportFolder")   openExportFolder();
     else if (command == "saveSong")
     {
-        if (! edit->getTransport().isRecording())
+        if (! recNow())
         {
             saveEdit();
             setStatus (sk ("Skladba uložená."), RafaColours::play);
@@ -292,7 +295,7 @@ juce::var MainComponent::buildStateObject()
     if (edit != nullptr)
     {
         auto& tr = edit->getTransport();
-        recording = tr.isRecording();
+        recording = recNow();
         playing   = tr.isPlaying() || recording;
         position  = tr.getPosition().inSeconds();
         length    = edit->getLength().inSeconds();
@@ -372,6 +375,7 @@ juce::var MainComponent::buildStateObject()
     device->setProperty ("cpu", juce::roundToInt (dm.getCpuUsage() * 100.0f));
     device->setProperty ("cpuPeak", juce::roundToInt (cpuPeak * 100.0f));
     device->setProperty ("dropouts", dropouts);
+    device->setProperty ("smoothLoop", smoothLoopEnabled());
     device->setProperty ("recordOffsetMs", getRecordOffsetMs());
     device->setProperty ("autoCompMs", juce::roundToInt (dm.getRecordAdjustmentMs() * 10.0) / 10.0);
     obj->setProperty ("device", device.release());
@@ -487,7 +491,7 @@ juce::var MainComponent::buildTracksObject()
                 obj->setProperty ("volumeDb", juce::roundToInt (vol->getVolumeDb() * 10.0f) / 10.0);
                 obj->setProperty ("pan", juce::roundToInt (vol->getPan() * 100.0f) / 100.0);
             }
-            obj->setProperty ("recording", tr.isRecording() && t == currentRecordingTrack);
+            obj->setProperty ("recording", recNow() && t == currentRecordingTrack);
 
             juce::Array<juce::var> clips;
 
@@ -528,7 +532,7 @@ void MainComponent::sendTracksToWebIfChanged (bool force)
     if (edit != nullptr)
     {
         auto& tr = edit->getTransport();
-        sig << (tr.isRecording() ? "R" : "-") << juce::String ((juce::pointer_sized_int) currentRecordingTrack);
+        sig << (recNow() ? "R" : "-") << juce::String ((juce::pointer_sized_int) currentRecordingTrack);
 
         for (auto* t : te::getAudioTracks (*edit))
         {
@@ -547,7 +551,7 @@ void MainComponent::sendTracksToWebIfChanged (bool force)
         }
 
         // pocas nahravania sa posuva odporucana dlzka osi
-        if (tr.isRecording() || tr.getPosition().inSeconds() + 5.0 > 30.0)
+        if (recNow() || tr.getPosition().inSeconds() + 5.0 > 30.0)
             sig << "#" << (int) ((tr.getPosition().inSeconds() + 5.0) / 5.0);
     }
 

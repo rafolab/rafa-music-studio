@@ -84,6 +84,7 @@ MainComponent::MainComponent (te::Engine& e)
     : engine (e)
 {
     setLookAndFeel (&lookAndFeel);
+    engine.getPluginManager().createBuiltInType<LoopBridgePlugin>();
 
     juce::PropertiesFile::Options opts;
     opts.applicationName     = "RAFA MUSIC STUDIO";
@@ -389,7 +390,9 @@ void MainComponent::closeEdit()
     if (edit == nullptr)
         return;
 
+    cancelFlyingLayer();
     edit->getTransport().stop (false, false);
+    removeLoopBridge();
     saveEdit();
     clearHistory();
     detachAllTrackMeters();
@@ -442,11 +445,26 @@ void MainComponent::loadEdit (const juce::File& file)
     updateTransportButtons();
 }
 
-void MainComponent::saveEdit()
+void MainComponent::saveEdit (bool automatic)
 {
     saveDueMs = 0;
     if (edit == nullptr)
         return;
+
+    if (bridgePlugin != nullptr)   // pomocny plugin premostenia sa do projektu neuklada
+    {
+        auto* bp = dynamic_cast<LoopBridgePlugin*> (bridgePlugin.get());
+        const bool busy = bp != nullptr && (bp->getResult() == LoopBridgePlugin::Result::waiting
+                                             || bp->getResult() == LoopBridgePlugin::Result::playing);
+
+        if (automatic && busy)
+        {
+            saveDueMs = juce::Time::getMillisecondCounter() + 400;   // automaticke ulozenie o chvilu
+            return;
+        }
+
+        removeLoopBridge();   // ulozenie na pokyn pouzivatela ma prednost
+    }
 
     if (editFileOps == nullptr || editFileOpsFor != edit.get())
     {
@@ -628,7 +646,7 @@ void MainComponent::showAudioSettings()
 void MainComponent::runDiagnostics()
 {
     // Skenovanie zariadeni moze narusit zvuk - len ked je vsetko zastavene
-    if (edit != nullptr && (edit->getTransport().isPlaying() || edit->getTransport().isRecording()))
+    if (edit != nullptr && (edit->getTransport().isPlaying() || recNow()))
     {
         setStatus (sk ("Diagnostiku spusti, keď je prehrávanie zastavené."), RafaColours::accent);
         return;
@@ -645,6 +663,9 @@ void MainComponent::runDiagnostics()
 
         for (auto& l : dropoutLog)
             report << "  " << l << nl;
+
+        report << "Plynule prve opakovanie slucky: " << (smoothLoopEnabled() ? "ZAP" : "VYP")
+               << (lastBridgeReport.isNotEmpty() ? " (posledne: " + lastBridgeReport + ")" : juce::String()) << nl;
     }
     auto file = Diagnostics::saveReport (report);
     juce::SystemClipboard::copyTextToClipboard (report);
@@ -781,6 +802,20 @@ void MainComponent::startRecording()
 
     auto& transport = edit->getTransport();
 
+    if (fly.active)   // REC pocas letmej vrstvy = zrusit ju
+    {
+        cancelFlyingLayer();
+        return;
+    }
+
+    // slucka uz hra a nic sa nenahrava: dalsia vrstva bez zastavenia (od najblizsieho LOOP IN)
+    if (! transport.isRecording() && transport.looping && transport.isPlaying() && ! pendingRecordingCheck
+         && transport.getLoopRange().getLength().inSeconds() >= 2.0)
+    {
+        if (startFlyingLayer())
+            return;
+    }
+
     if (transport.isRecording())
     {
         // v slucke REC ukonci vrstvu a slucka hra dalej; inak REC = STOP
@@ -820,6 +855,7 @@ void MainComponent::startRecording()
         loopRecordPass = true;
         loopWrapped = false;
         lastLoopPosition = -1.0e9;
+        installLoopBridge (*currentRecordingTrack);
         transport.setPosition (transport.getLoopRange().getStart());
         transport.record (false);
         setStatus (sk ("● Nahrávam vrstvu slučky do stopy „") + currentRecordingTrack->getName()
@@ -870,6 +906,7 @@ void MainComponent::stopTransport()
         return;
 
     auto& transport = edit->getTransport();
+    cancelFlyingLayer();
     const bool wasRecording = transport.isRecording();
     loopRecordPass = false;
 
@@ -894,7 +931,7 @@ void MainComponent::stopTransport()
 
 void MainComponent::rewind()
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return;
 
     auto& tr = edit->getTransport();
@@ -963,7 +1000,7 @@ void MainComponent::checkFinishedRecording()
             h.trackCreatedByTake = recordTrackWasCreated;
             pushHistory (std::move (h));
 
-            saveEdit();
+            saveEdit (true);
             if (flat.status == LoopFlattenResult::failed)
                 setStatus (sk ("CHYBA: slučku sa nepodarilo spracovať (") + flat.error
                              + sk ("). Pôvodná nahrávka ostala v priečinku skladby – vrstvu skontroluj alebo vráť (UNDO) a pošli Diagnostiku."),
@@ -981,7 +1018,7 @@ void MainComponent::checkFinishedRecording()
     if (juce::Time::getMillisecondCounter() > recordingCheckDeadline)
     {
         pendingRecordingCheck = false;
-        saveEdit();
+        saveEdit (true);
         setStatus (sk ("Nahrávka nevznikla alebo je prázdna. Skontroluj vstup a pošli Diagnostiku."),
                    RafaColours::record);
     }
@@ -989,7 +1026,7 @@ void MainComponent::checkFinishedRecording()
 
 void MainComponent::deleteTrack (te::AudioTrack& t)
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return;
 
     auto name = t.getName();
@@ -1061,19 +1098,21 @@ void MainComponent::timerCallback()
     }
 
     checkLoopRecordingPass();
+    checkFlyingLayer();
+    maintainLoopBridge();
     syncTrackMeters();
     syncOutputMeter();
 
     if (saveDueMs != 0 && juce::Time::getMillisecondCounter() >= saveDueMs
-         && edit != nullptr && ! edit->getTransport().isRecording())
+         && edit != nullptr && ! recNow())
     {
         saveDueMs = 0;
-        saveEdit();
+        saveEdit (true);
     }
 
     // nahravanie sa zastavilo samo (napr. zvukove zariadenie sa pri starte prave pripajalo)
     if (edit != nullptr && currentRecordingTrack != nullptr && ! pendingRecordingCheck
-         && ! edit->getTransport().isRecording()
+         && ! recNow()
          && juce::Time::getMillisecondCounter() > recordingStartedMs + 1500)
     {
         juce::Logger::writeToLog ("Nahravanie sa prerusilo bez STOP");
@@ -1095,7 +1134,7 @@ void MainComponent::timerCallback()
         timeLabel.setText (juce::String::formatted ("%d:%04.1f", mins, secs - mins * 60.0),
                            juce::dontSendNotification);
         timeLabel.setColour (juce::Label::textColourId,
-                             edit->getTransport().isRecording() ? RafaColours::record : RafaColours::text);
+                             recNow() ? RafaColours::record : RafaColours::text);
 
         trackList.updatePlayhead();
     }
@@ -1141,7 +1180,7 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
         attachMeterToSelectedInput();
         updateDeviceInfo();
 
-        if (edit != nullptr && ! edit->getTransport().isRecording())
+        if (edit != nullptr && ! recNow())
             edit->getTransport().ensureContextAllocated();
     }
     else if (edit != nullptr && source == &edit->getTransport())
@@ -1161,7 +1200,7 @@ void MainComponent::rememberOrRestorePreferredInput (bool userChange)
 {
     static bool busy = false;
 
-    if (busy || (edit != nullptr && edit->getTransport().isRecording()))
+    if (busy || (edit != nullptr && recNow()))
         return;
 
     auto& adm = engine.getDeviceManager().deviceManager;
@@ -1264,7 +1303,7 @@ void MainComponent::checkAudioDropouts()
     static juce::uint32 lastWarn = 0;
     const auto nowMs = juce::Time::getMillisecondCounter();
 
-    if ((edit == nullptr || ! edit->getTransport().isRecording()) && nowMs - lastWarn > 20000)
+    if ((edit == nullptr || ! recNow()) && nowMs - lastWarn > 20000)
     {
         lastWarn = nowMs;
         setStatus (sk ("Výpadok zvuku (spolu ") + juce::String (dropouts)
@@ -1281,7 +1320,7 @@ void MainComponent::resetAudioDropouts()
 
 void MainComponent::setBufferSize (int samples)
 {
-    if (edit != nullptr && edit->getTransport().isRecording())
+    if (edit != nullptr && recNow())
         return;
 
     auto& adm = engine.getDeviceManager().deviceManager;

@@ -17,7 +17,7 @@ juce::String buildReport (te::Engine& engine, const te::Edit* edit, const juce::
     auto nl = "\r\n";
 
     r << "=== RAFA MUSIC STUDIO - diagnostika ===" << nl
-      << "Verzia aplikacie: " << ProjectInfo::versionString << nl
+      << "Verzia aplikacie: " << RAFA_VERSION_LABEL << " (commit " << RAFA_COMMIT << ")" << nl
       << "Cas: " << juce::Time::getCurrentTime().toString (true, true) << nl
       << "System: " << juce::SystemStats::getOperatingSystemName()
       << (juce::SystemStats::isOperatingSystem64Bit() ? " (64-bit)" : " (32-bit)") << nl

@@ -111,7 +111,7 @@ void MainComponent::openSongPath (const juce::String& path)
     if (! f.existsAsFile() || ! f.isAChildOf (RafaPaths::getRootFolder()) || ! f.hasFileExtension ("tracktionedit"))
         return;
 
-    if (edit != nullptr && edit->getTransport().isRecording())
+    if (edit != nullptr && recNow())
         return;
 
     if (f != editFile)
@@ -124,7 +124,7 @@ void MainComponent::openSongPath (const juce::String& path)
 //==============================================================================
 bool MainComponent::saveSongAs (const juce::String& rawName)
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return false;
 
     auto name = legalSongName (rawName);
@@ -181,7 +181,7 @@ bool MainComponent::saveSongAs (const juce::String& rawName)
 
 void MainComponent::discardOrDeleteSong (bool onlyDraft, const juce::String& thenOpenPath)
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return;
 
     if (onlyDraft && ! isDraftSong())
@@ -265,7 +265,7 @@ void MainComponent::moveSongsToDrafts (const juce::var& paths)
 //==============================================================================
 void MainComponent::exportTracks()
 {
-    if (edit == nullptr || edit->getTransport().isRecording())
+    if (edit == nullptr || recNow())
         return;
 
     auto tracks = te::getAudioTracks (*edit);
@@ -360,7 +360,7 @@ void MainComponent::requestQuit (std::function<void()> doQuit)
         return;
     }
 
-    if (edit->getTransport().isRecording())
+    if (recNow())
         stopTransport();
 
     auto* aw = new juce::AlertWindow (sk ("Skladba nie je pomenovaná"),
