@@ -67,3 +67,17 @@ jobs:
             --notes "Automaticky zostavene z commitu ${GITHUB_SHA::7}. Stiahni ZIP, rozbal a spusti RAFA MUSIC STUDIO.exe." \
             --target "$GITHUB_SHA" \
             --prerelease
+
+      - name: Zverejnit nahlad vetvy (nie hlavna verzia)
+        if: github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="nahlad-${GITHUB_REF_NAME//\//-}"
+          gh release delete "$TAG" --cleanup-tag --yes || true
+          gh release create "$TAG" dist/RAFA-MUSIC-STUDIO-Windows.zip \
+            --title "RAFA MUSIC STUDIO - nahlad ($GITHUB_REF_NAME)" \
+            --notes "Skusobna zostava z vetvy $GITHUB_REF_NAME, commit ${GITHUB_SHA::7}. Nie je to hlavna verzia." \
+            --target "$GITHUB_SHA" \
+            --prerelease
