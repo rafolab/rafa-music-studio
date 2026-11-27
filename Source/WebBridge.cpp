@@ -10,6 +10,7 @@
 #include "MainComponent.h"
 #include "Diagnostics.h"
 #include "RafaUIData.h"
+#include "RafaUIFuture.h"
 
 static constexpr int rafaApiVersion = 5;
 
@@ -19,6 +20,16 @@ static const char* findUIResource (const juce::String& fileName, int& size)
     for (int i = 0; i < RafaUI::namedResourceListSize; ++i)
         if (fileName.equalsIgnoreCase (RafaUI::originalFilenames[i]))
             return RafaUI::getNamedResource (RafaUI::namedResourceList[i], size);
+
+    size = 0;
+    return nullptr;
+}
+
+static const char* findFutureResource (const juce::String& fileName, int& size)
+{
+    for (int i = 0; i < RafaUIFuture::namedResourceListSize; ++i)
+        if (fileName.equalsIgnoreCase (RafaUIFuture::originalFilenames[i]))
+            return RafaUIFuture::getNamedResource (RafaUIFuture::namedResourceList[i], size);
 
     size = 0;
     return nullptr;
@@ -64,7 +75,10 @@ std::optional<juce::WebBrowserComponent::Resource> MainComponent::getWebResource
 
     int size = 0;
 
-    if (auto* data = findUIResource (fileName, size))
+    // vzhlad FUTURE MODEL 5 ma vlastny balik (mena suborov su rovnake ako pri Retro)
+    const bool future = path.startsWithIgnoreCase ("assets/themes/future/");
+
+    if (auto* data = future ? findFutureResource (fileName, size) : findUIResource (fileName, size))
     {
         juce::WebBrowserComponent::Resource r;
         r.data.resize ((size_t) size);
@@ -227,6 +241,13 @@ void MainComponent::handleWebCommand (const juce::var& message)
     else if (command == "resetDropouts")     resetAudioDropouts();
     else if (command == "testLog")           RAFA_T ("JS " + args.getProperty ("text", {}).toString());   // len pri automatickych testoch
     else if (command == "setSmoothLoop")     setSmoothLoop ((bool) args.getProperty ("on", true));
+    else if (command == "setTheme")
+    {
+        // iba vzhlad: ziadny zasah do zvuku, nahravania ani prehravania
+        auto name = args.getProperty ("name", "retro").toString() == "future" ? "future" : "retro";
+        settings->setValue ("uiTheme", juce::String (name));
+        settings->saveIfNeeded();
+    }
     // --- API v2: tempo, metronom, LOOP ---
     else if (command == "setTempo")           setTempoBpm ((double) args.getProperty ("bpm", 120.0));
     else if (command == "setTimeSignature")   setTimeSignature ((int) args.getProperty ("numerator", 4), (int) args.getProperty ("denominator", 4));
@@ -376,6 +397,7 @@ juce::var MainComponent::buildStateObject()
     device->setProperty ("cpuPeak", juce::roundToInt (cpuPeak * 100.0f));
     device->setProperty ("dropouts", dropouts);
     device->setProperty ("smoothLoop", smoothLoopEnabled());
+    device->setProperty ("theme", settings->getValue ("uiTheme", "retro") == "future" ? "future" : "retro");
     device->setProperty ("recordOffsetMs", getRecordOffsetMs());
     device->setProperty ("autoCompMs", juce::roundToInt (dm.getRecordAdjustmentMs() * 10.0) / 10.0);
     obj->setProperty ("device", device.release());

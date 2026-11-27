@@ -84,7 +84,7 @@
   const BTN = {};
   for (const [id, b] of Object.entries(C.buttons)) {
     const extra = id.startsWith("mute") ? " led-red" : id.startsWith("solo") ? " led-yellow" : "";
-    const wrap = el("div", "btn k-" + b.kind + extra, spritesEl, { left: px(b.x), top: px(b.y), width: px(b.w), height: px(b.h) });
+    const wrap = el("div", "btn b-" + id + " k-" + b.kind + extra, spritesEl, { left: px(b.x), top: px(b.y), width: px(b.w), height: px(b.h) });
     el("div", "glow", wrap);
     const off = el("img", "spr", wrap, { left: 0, top: 0, width: px(b.w), height: px(b.h) }); off.src = b.off;
     const on = el("img", "spr on", wrap, { left: 0, top: 0, width: px(b.w), height: px(b.h) }); on.src = b.on;
@@ -367,6 +367,26 @@
   }
 
   // ------------------------------------------------------------------ DISPLEJ – obsah
+  // ------------------------------------------------------------------ VZHĽAD (RETRO / FUTURE) – mení len obrázky a farby, nie ovládanie ani zvuk
+  const TRACK_COLS = ["#ff5a5a", "#40d8ff", "#58ff80", "#c77dff"];
+  let theme = "retro", themeLocalAt = 0;
+  try { if (localStorage.getItem("rafaTheme") === "future") theme = "future"; } catch (e) {}
+  const isFuture = () => theme === "future";
+  const waveCol = (t) => isFuture() ? TRACK_COLS[Math.max(0, tracks.indexOf(t)) % 4] : "#ffb547";
+  function applyTheme (name) {
+    theme = name === "future" ? "future" : "retro";
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("rafaTheme", theme); } catch (e) {}
+    for (const img of stage.querySelectorAll("img")) {
+      if (!img.dataset.base) { const s0 = img.getAttribute("src") || ""; if (!s0.startsWith("assets/")) continue; img.dataset.base = s0; }
+      const base = img.dataset.base, want = isFuture() ? base.replace("assets/", "assets/themes/future/") : base;
+      if (img.getAttribute("src") === want) continue;
+      img.onerror = isFuture() ? () => { img.onerror = null; img.src = base; } : null;   // chýbajúci obrázok = Retro
+      img.src = want;
+    }
+    if (typeof laneEls !== "undefined") for (const le of laneEls) le.sig = "";
+    if (window.RafaPanel && RafaPanel.repaint) RafaPanel.repaint();
+  }
   const lanesEl = $("#dLanes");
   const fmtTime = (s) => { const neg = s < 0; s = Math.abs(s); const m = Math.floor(s / 60), r = s - m * 60; return (neg ? "−" : "") + m + ":" + r.toFixed(3).padStart(6, "0"); };
   const fmtShort = (s) => { const m = Math.floor(s / 60), r = Math.floor(s - m * 60); return m + ":" + String(r).padStart(2, "0"); };
@@ -398,18 +418,18 @@
   }
 
   function drawWave (le, t) {
-    const sig = t ? t.id + ":" + t.clips.length + ":" + viewLength + ":" + (t.clips[0] ? t.clips[0].length + ":" + t.clips[0].start : "") : "";
+    const sig = t ? theme + ":" + t.id + ":" + t.clips.length + ":" + viewLength + ":" + (t.clips[0] ? t.clips[0].length + ":" + t.clips[0].start : "") : "";
     if (sig === le.sig) return; le.sig = sig;
     const cv = le.cv, g = cv.getContext("2d"); g.clearRect(0, 0, cv.width, cv.height);
     if (!t) return;
     const sx = cv.width / viewLength, mid = cv.height / 2;
-    g.fillStyle = "#ffb547"; g.shadowColor = "rgba(255,150,30,.7)"; g.shadowBlur = 4;
+    g.fillStyle = waveCol(t); g.shadowColor = isFuture() ? waveCol(t) : "rgba(255,150,30,.7)"; g.shadowBlur = 4;
     for (const c of t.clips) {
       const pk = c.peaks || []; if (!pk.length) continue;
       const x0 = c.start * sx, w = c.length * sx, step = w / pk.length;
       for (let i = 0; i < pk.length; i++) { const h = Math.max(1, pk[i] * mid * 0.92); g.fillRect(x0 + i * step, mid - h, Math.max(1, step * 0.8), h * 2); }
     }
-    g.shadowBlur = 0; g.fillStyle = "rgba(255,170,60,.35)"; g.fillRect(0, mid - 0.5, cv.width, 1);
+    g.shadowBlur = 0; g.fillStyle = isFuture() ? "rgba(150,200,255,.25)" : "rgba(255,170,60,.35)"; g.fillRect(0, mid - 0.5, cv.width, 1);
   }
 
   function renderDisplay () {
@@ -533,6 +553,7 @@
         { t: "Buffer (praskanie): " + (dev.buffer ? dev.buffer + " vzoriek · " + bufMs(dev.buffer) : "–") + "…", sub: () => (dev.bufferSizes || []).map(b => ({ t: (b === dev.buffer ? "● " : "  ") + b + " vzoriek · " + bufMs(b) + (b >= 512 && b <= 1024 ? "  (bezpečné)" : b < 256 ? "  (nízka odozva, riziko praskania)" : ""), act: () => send("setBufferSize", { samples: b }) })), dis: rec() || !(dev.bufferSizes && dev.bufferSizes.length) },
         { t: "Posun nahrávky: " + fmtOffset(dev.recordOffsetMs || 0) + "…", sub: () => [-50, -40, -30, -25, -20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 40, 50].map(ms => ({ t: (Math.round(dev.recordOffsetMs || 0) === ms ? "● " : "  ") + fmtOffset(ms) + (ms === 0 ? "  (predvolené)" : ms > 0 ? "  (nahrávka sa posunie skôr)" : "  (nahrávka sa posunie neskôr)"), act: () => send("setRecordOffset", { ms }) })), dis: rec() },
  { t: "Plynulé prvé opakovanie slučky: " + (dev.smoothLoop === false ? "VYP" : "ZAP"), act: () => send("setSmoothLoop", { on: dev.smoothLoop === false }), keep: true, dis: rec() },
+        { t: "Vzhľad (Appearance): " + (isFuture() ? "FUTURE MODEL 5" : "RETRO MODEL 5") + "…", sub: () => [["retro", "RETRO MODEL 5"], ["future", "FUTURE MODEL 5"]].map(([id, nm]) => ({ t: (theme === id ? "● " : "  ") + nm, act: () => { themeLocalAt = performance.now(); applyTheme(id); send("setTheme", { name: id }); } })) },
         { t: "Výpadky zvuku: " + (dev.dropouts || 0) + " · CPU max " + (dev.cpuPeak || 0) + " % (vynulovať)", act: () => send("resetDropouts"), keep: true },
         { t: "Diagnostika", act: () => send("runDiagnostics"), dis: !(st && st.busy && st.busy.diagnosticsAllowed !== false) } ] },
     };
@@ -874,7 +895,7 @@
       if (zoom > 1 && st && st.transport && st.transport.playing && (x > 0.92 || x < 0)) { vStart = p - vLen() * 0.1; clampView(); marksSig = ""; for (const r of rowEls.values()) r.sig = ""; update(false); }
     }
     function drawRow (r, t, w) {
-      const sig = t.id + ":" + hOf(t.id) + ":" + t.clips.map(c => c.start + "/" + c.length + "/" + (c.peaks ? c.peaks.length : 0)).join(",") + ":" + viewLength + ":" + w + ":" + vStart.toFixed(3) + ":" + zoom;
+      const sig = theme + ":" + t.id + ":" + hOf(t.id) + ":" + t.clips.map(c => c.start + "/" + c.length + "/" + (c.peaks ? c.peaks.length : 0)).join(",") + ":" + viewLength + ":" + w + ":" + vStart.toFixed(3) + ":" + zoom;
       if (r.sig === sig) return; r.sig = sig;
       const hh = hOf(t.id) - 4, cv = r.cv, dpr = 2; cv.width = w * dpr; cv.height = hh * dpr; cv.style.width = px(w); cv.style.height = px(hh);
       const g = cv.getContext("2d"); g.clearRect(0, 0, cv.width, cv.height);
@@ -885,7 +906,7 @@
         g.fillStyle = "rgba(255,170,60,.10)"; g.fillRect(x0, 2, cw, cv.height - 4);
         g.strokeStyle = "rgba(255,170,60,.45)"; g.lineWidth = 1; g.strokeRect(x0 + .5, 2.5, cw - 1, cv.height - 5);
         const pk = c.peaks || []; if (!pk.length) continue;
-        g.fillStyle = "#ffb547"; const step = cw / pk.length;
+        g.fillStyle = waveCol(t); const step = cw / pk.length;
         for (let i = 0; i < pk.length; i++) { const xi = x0 + i * step; if (xi + step < 0 || xi > cv.width) continue; const h = Math.max(1, pk[i] * (mid - 6)); g.fillRect(xi, mid - h, Math.max(1, step * .85), h * 2); }
       }
     }
@@ -960,7 +981,7 @@
       if (force) layout();
     }
     let lastH = 0;
-    return { layout, toggle, head, update: () => { update(false); if (open && pnl.offsetHeight !== lastH) { lastH = pnl.offsetHeight; layout(); } }, get open () { return open; } };
+    return { layout, toggle, head, repaint: () => { for (const r of rowEls.values()) r.sig = ""; update(false); }, update: () => { update(false); if (open && pnl.offsetHeight !== lastH) { lastH = pnl.offsetHeight; layout(); } }, get open () { return open; } };
   })();
 
   // ------------------------------------------------------------------ motor
@@ -970,6 +991,7 @@
     if (stx && stx !== lastStatus && lastStatus !== "") flashValue(stx, s.status.level === "error" || s.status.level === "warn" ? 3500 : 2200);
     lastStatus = stx || lastStatus;
     st = s;
+    if (s.device && s.device.theme && s.device.theme !== theme && performance.now() - themeLocalAt > 2000) applyTheme(s.device.theme);
     if (s.transport) { posBase = s.transport.position || 0; posAt = performance.now(); }
     if (pendingSongList && s.songList) { const fn = pendingSongList; pendingSongList = null; fn(s.songList); } if (menu && ["project", "tracks", "effects", "settings"].includes(menu.id) && !menu.parent) { const m = buildMenu(menu.id); m.sel = menu.sel; menu = m; drawMenuQuiet(); } render(); });
   Rafa.on("tracks", (t) => {
@@ -980,6 +1002,7 @@
     render();
   });
   fit();
+  applyTheme(theme);
   send("uiReady");
   window.RafaConsole = { render, get state () { return st; }, get tracks () { return tracks; } };
 })();

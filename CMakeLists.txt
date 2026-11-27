@@ -58,7 +58,11 @@ juce_generate_juce_header (${TARGET_NAME})
 # Obrazovka v HTML (priecinok ui/) sa zabali priamo do .exe
 file (GLOB_RECURSE RAFA_UI_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/*")
 list (FILTER RAFA_UI_FILES EXCLUDE REGEX "\\.md$")
+list (FILTER RAFA_UI_FILES EXCLUDE REGEX "/ui/assets/themes/")
 juce_add_binary_data (RafaUIData NAMESPACE RafaUI HEADER_NAME RafaUIData.h SOURCES ${RAFA_UI_FILES})
+# vzhlad FUTURE MODEL 5 - rovnake mena suborov ako Retro, preto samostatny balik
+file (GLOB RAFA_UI_FUTURE CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ui/assets/themes/future/*.webp")
+juce_add_binary_data (RafaUIFuture NAMESPACE RafaUIFuture HEADER_NAME RafaUIFuture.h SOURCES ${RAFA_UI_FUTURE})
 
 target_sources (${TARGET_NAME} PRIVATE
     Source/Main.cpp
@@ -92,7 +96,7 @@ target_compile_definitions (${TARGET_NAME} PRIVATE
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:${TARGET_NAME},JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:${TARGET_NAME},JUCE_VERSION>"
-    RAFA_VERSION_LABEL="1.0.0-rc2"
+    RAFA_VERSION_LABEL="1.0.0-rc2-future1"
     RAFA_COMMIT="${RAFA_COMMIT}"
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1)
 
@@ -105,6 +109,7 @@ target_link_libraries (${TARGET_NAME} PRIVATE
     juce::juce_audio_utils
     juce::juce_gui_extra
     RafaUIData
+    RafaUIFuture
     juce::juce_recommended_config_flags)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")

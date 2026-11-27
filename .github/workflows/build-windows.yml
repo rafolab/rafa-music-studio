@@ -5,7 +5,7 @@ name: Zostavenie pre Windows
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'feature/**' ]
     paths-ignore: [ '**.md' ]
   workflow_dispatch:
 
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-build
+  group: windows-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -56,6 +56,7 @@ jobs:
           path: dist/RAFA-MUSIC-STUDIO-Windows.zip
 
       - name: Zverejnit ako "najnovsia-verzia"
+        if: github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
