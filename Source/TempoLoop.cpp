@@ -97,8 +97,8 @@ void MainComponent::setMetronomeVolume (double volume)
     if (edit == nullptr)
         return;
 
-    // Tracktion pripusta 0.2 - 1.0; hodnoty z UI 0 - 1 premapujeme
-    edit->setClickTrackVolume ((float) (0.2 + 0.8 * juce::jlimit (0.0, 1.0, volume)));
+    // 0 = ticho, 1 = plna hlasitost (obmedzenie motora na min. 20 % je pri zostaveni odstranene)
+    edit->setClickTrackVolume ((float) juce::jlimit (0.0, 1.0, volume));
     requestSave();
 }
 
@@ -452,7 +452,7 @@ juce::var MainComponent::buildTempoLoopState()
     auto countIn = edit->getCountInMode();
     auto metro = std::make_unique<juce::DynamicObject>();
     metro->setProperty ("on", (bool) edit->clickTrackEnabled.get());
-    metro->setProperty ("volume", juce::jlimit (0.0, 1.0, ((double) edit->getClickTrackVolume() - 0.2) / 0.8));
+    metro->setProperty ("volume", juce::jlimit (0.0, 1.0, (double) edit->getClickTrackVolume()));
     metro->setProperty ("countInBars", countIn == te::Edit::CountIn::twoBar ? 2
                                      : countIn == te::Edit::CountIn::oneBar ? 1 : 0);
     obj->setProperty ("metronome", metro.release());

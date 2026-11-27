@@ -108,6 +108,7 @@ bool MainComponent::undoLast()
 
     auto e = undoStack.back();
     undoStack.pop_back();
+    logEvent ("UNDO: " + e.label);
 
     if (e.type == HistoryEntry::take)
     {
@@ -165,6 +166,7 @@ bool MainComponent::redoLast()
 
     auto e = redoStack.back();
     redoStack.pop_back();
+    logEvent ("REDO: " + e.label);
 
     if (e.type == HistoryEntry::take)
     {

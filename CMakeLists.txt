@@ -39,6 +39,18 @@ FetchContent_Declare (tracktion_engine
 
 FetchContent_MakeAvailable (juce tracktion_engine)
 
+# Uprava motora: hlasitost metronomu az do ticha (Tracktion ju inak drzi na minime 20 %).
+# Zapise sa iba ked sa nieco meni, aby sa motor zbytocne neprekompilovaval.
+foreach (te_file model/edit/tracktion_Edit.h model/edit/tracktion_Edit.cpp)
+    set (te_path "${tracktion_engine_SOURCE_DIR}/modules/tracktion_engine/${te_file}")
+    file (READ "${te_path}" te_text)
+    string (REPLACE "juce::jlimit (0.2f, 1.0f, " "juce::jlimit (0.0f, 1.0f, " te_new "${te_text}")
+    if (NOT te_new STREQUAL te_text)
+        file (WRITE "${te_path}" "${te_new}")
+        message (STATUS "RAFA: hlasitost metronomu povolena az do ticha (${te_file})")
+    endif()
+endforeach()
+
 # ------------------------------------------------------------------------------
 set (TARGET_NAME RafaMusicStudio)
 
@@ -92,7 +104,7 @@ target_compile_definitions (${TARGET_NAME} PRIVATE
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:${TARGET_NAME},JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:${TARGET_NAME},JUCE_VERSION>"
-    RAFA_VERSION_LABEL="1.0.0-rc5"
+    RAFA_VERSION_LABEL="1.0.0-rc6"
     RAFA_COMMIT="${RAFA_COMMIT}"
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1)
 

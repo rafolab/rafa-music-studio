@@ -1,4 +1,4 @@
-RAFA MUSIC STUDIO 1.0.0-rc5 – TEST NA WINDOWS (s BEAM Mini)
+RAFA MUSIC STUDIO 1.0.0-rc6 – TEST NA WINDOWS (s BEAM Mini)
 ============================================================
 Pri každom bode napíš OK alebo čo bolo zle. Stačí krátko.
 
@@ -35,7 +35,7 @@ C. OVLÁDANIE A VZHĽAD
  C2  EFFECTS ukáže "Efekty budú vo verzii 1.1".
  C3  Grafika: ak vidíš chybu oproti originálu, napíš ktorá
      (prípadne pošli výrez obrazovky).
- C4  SETTINGS → Diagnostika: "1.0.0-rc5".
+ C4  SETTINGS → Diagnostika: "1.0.0-rc6".
 
 Verzia 1.0 bude označená ako stabilná až po tvojom teste.
 
