@@ -871,6 +871,7 @@ void MainComponent::startRecording()
     clipsBeforeRecording = currentRecordingTrack->getClips().size();
     pendingRecordingCheck = false;
     recordingStartedMs = juce::Time::getMillisecondCounter();
+    stoppedBeforeLoopEnd = false;
 
     trackList.refreshIfChanged();
     trackList.setRecordingTrack (currentRecordingTrack);
@@ -934,6 +935,7 @@ void MainComponent::stopTransport()
     auto& transport = edit->getTransport();
     cancelFlyingLayer();
     const bool wasRecording = transport.isRecording();
+    stoppedBeforeLoopEnd = wasRecording && loopRecordPass;   // STOP este v prvom prechode slucky
     loopRecordPass = false;
 
     // zastavene este pocas odpocitania? (nic sa nenahralo - prazdnu novu stopu potom odstranime)
@@ -1067,7 +1069,10 @@ void MainComponent::checkFinishedRecording()
             saveEdit (true);
             logEvent ("nahravka ulozena: stopa=" + track->getName() + " dlzka=" + juce::String (seconds, 3) + " s"
                       + (flat.status == LoopFlattenResult::failed ? " CHYBA slucky: " + flat.error : juce::String()));
-            if (flat.status == LoopFlattenResult::failed)
+            if (flat.status == LoopFlattenResult::failed && stoppedBeforeLoopEnd)
+                setStatus (sk ("Nahrávanie zastavené pred koncom slučky – nahraté ") + juce::String (seconds, 1)
+                             + sk (" s. Ak ho nechceš, daj UNDO."), RafaColours::accent);
+            else if (flat.status == LoopFlattenResult::failed)
                 setStatus (sk ("CHYBA: slučku sa nepodarilo spracovať (") + flat.error
                              + sk ("). Pôvodná nahrávka ostala v priečinku skladby – vrstvu skontroluj alebo vráť (UNDO) a pošli Diagnostiku."),
                            RafaColours::record);

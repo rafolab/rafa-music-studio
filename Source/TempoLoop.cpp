@@ -292,7 +292,8 @@ MainComponent::LoopFlattenResult MainComponent::flattenLoopTakes (te::WaveAudioC
     auto takeNumber = [] (const juce::File& f)
     {
         auto n = f.getFileNameWithoutExtension();
-        auto i = n.lastIndexOfIgnoreCase ("_take_");
+        // iba male "_take_N" (kola slucky); "Take_3" v nazve suboru je cislo pokusu, nie kolo slucky
+        auto i = n.lastIndexOf ("_take_");
         return i < 0 ? 1 : n.substring (i + 6).getIntValue();
     };
 
