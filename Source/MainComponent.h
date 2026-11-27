@@ -31,12 +31,22 @@ private:
 class AudioWatch : public juce::AudioIODeviceCallback
 {
 public:
-    void audioDeviceIOCallbackWithContext (const float* const*, int, float* const* out, int numOut, int numSamples,
+    void audioDeviceIOCallbackWithContext (const float* const* in, int numIn, float* const* out, int numOut, int numSamples,
                                            const juce::AudioIODeviceCallbackContext&) override
     {
         for (int c = 0; c < numOut; ++c)
             if (out[c] != nullptr)
                 juce::FloatVectorOperations::clear (out[c], numSamples);
+
+        // spicka vybraneho vstupu gitary - priamo zo zvukovej karty, aj ked MONITOR je vypnuty
+        const int ch = meterInput.load (std::memory_order_relaxed);
+        if (ch >= 0 && ch < numIn && in[ch] != nullptr)
+        {
+            const auto r = juce::FloatVectorOperations::findMinAndMax (in[ch], numSamples);
+            const float p = juce::jmax (std::abs (r.getStart()), std::abs (r.getEnd()));
+            if (p > inputPeak.load (std::memory_order_relaxed))
+                inputPeak.store (p, std::memory_order_relaxed);
+        }
 
         const auto now = juce::Time::getHighResolutionTicks();
 
@@ -67,6 +77,8 @@ public:
     void audioDeviceStopped() override   { lastTicks = 0; }
 
     std::atomic<int> lateBlocks { 0 };
+    std::atomic<int> meterInput { -1 };     // poradie vstupu medzi aktivnymi kanalmi zariadenia
+    std::atomic<float> inputPeak { 0.0f };
     std::atomic<double> worstGapMs { 0.0 };
 
 private:

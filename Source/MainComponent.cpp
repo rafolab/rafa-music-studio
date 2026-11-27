@@ -558,6 +558,7 @@ void MainComponent::detachMeter()
 
     meteredDevice = nullptr;
     meterClient.reset();
+    audioWatch.meterInput.store (-1);
 }
 
 void MainComponent::attachMeterToSelectedInput()
@@ -573,6 +574,24 @@ void MainComponent::attachMeterToSelectedInput()
         {
             meteredDevice = w;
             meteredDevice->levelMeasurer.addClient (meterClient);
+
+            // ten isty vstup merame aj priamo (bez ohladu na MONITOR): prvy kanal vstupu
+            // -> poradie medzi aktivnymi vstupnymi kanalmi zvukoveho zariadenia
+            int idx = -1;
+            if (auto* dev = dm.deviceManager.getCurrentAudioDevice(); dev != nullptr && w->getChannels().size() > 0)
+            {
+                const int devCh = w->getChannels()[0].indexInDevice;
+                const auto active = dev->getActiveInputChannels();
+                if (devCh >= 0 && active[devCh])
+                {
+                    idx = 0;
+                    for (int c = 0; c < devCh; ++c)
+                        if (active[c]) ++idx;
+                }
+            }
+            audioWatch.meterInput.store (idx);
+            RAFA_T ("meter vstup " + w->getName() + " kanal v zariadeni " + juce::String (w->getChannels().size() > 0 ? w->getChannels()[0].indexInDevice : -1)
+                    + " -> poradie " + juce::String (idx));
             break;
         }
     }
@@ -1163,6 +1182,8 @@ void MainComponent::timerCallback()
 
     {
         auto db = meteredDevice != nullptr ? meterClient.getAndClearAudioLevel (0).dB : -100.0f;
+        const float pk = audioWatch.inputPeak.exchange (0.0f, std::memory_order_relaxed);
+        db = juce::jmax (db, juce::Decibels::gainToDecibels (pk, -100.0f));   // aj pri vypnutom MONITOR
         inputMeterDb = db > inputMeterDb ? db : juce::jmax (db, inputMeterDb - 1.5f);
 
         if (! webUIActive)
