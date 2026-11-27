@@ -160,6 +160,12 @@ void MainComponent::handleWebCommand (const juce::var& message)
     if (command == "uiReady")
     {
         juce::Logger::writeToLog ("   HTML obrazovka sa nacitala (uiReady)");
+        {
+            juce::String dev;
+            if (auto* d = engine.getDeviceManager().deviceManager.getCurrentAudioDevice())
+                dev = d->getTypeName() + " / " + d->getName() + " / buffer " + juce::String (d->getCurrentBufferSizeSamples());
+            logEvent ("START programu " RAFA_VERSION_LABEL " (" RAFA_COMMIT "), zvuk: " + dev);
+        }
         sendStateToWeb();
         sendTracksToWebIfChanged (true);
         return;

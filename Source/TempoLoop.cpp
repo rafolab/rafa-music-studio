@@ -666,7 +666,10 @@ bool MainComponent::startFlyingLayer()
     auto* track = prepareTrackForRecording();
 
     if (track == nullptr)
+    {
+        logEvent ("vrstva: stopu sa nepodarilo pripravit");
         return true;   // chyba uz bola ohlasena
+    }
 
     te::InputDeviceInstance* inst = nullptr;
 
@@ -678,6 +681,7 @@ bool MainComponent::startFlyingLayer()
     if (inst == nullptr)
     {
         setStatus (sk ("Nahrávanie sa nespustilo: vstup nie je pripravený."), RafaColours::record);
+        logEvent ("vrstva: vstup nie je pripraveny");
         return true;
     }
 
@@ -717,6 +721,8 @@ void MainComponent::beginFlyingRecording()
         currentRecordingTrack = nullptr;
         removeLoopBridge();
         setStatus (sk ("Vrstva sa nenahrala – slučka už nehrá."), RafaColours::accent);
+        logEvent ("vrstva: slucka uz nehra (ctx=" + juce::String ((int) (ctx != nullptr)) + " inst=" + juce::String ((int) (inst != nullptr))
+                  + " hra=" + juce::String ((int) tr.isPlaying()) + " slucka=" + juce::String ((int) tr.looping) + ")");
         updateTransportButtons();
         return;
     }
@@ -766,6 +772,7 @@ void MainComponent::beginFlyingRecording()
         currentRecordingTrack = nullptr;
         removeLoopBridge();
         setStatus (sk ("Nahrávanie sa nespustilo: ") + error, RafaColours::record);
+        logEvent ("vrstva: nahravanie sa nespustilo: " + error);
         updateTransportButtons();
         return;
     }
@@ -842,6 +849,8 @@ void MainComponent::flyingLayerStopped (tl::expected<te::Clip::Array, juce::Stri
     currentRecordingTrack = nullptr;
     RAFA_T ("fly stopped cancelled=" + juce::String ((int) cancelled) + " ok=" + juce::String ((int) res.has_value())
             + " clips=" + juce::String (res.has_value() ? (int) res->size() : -1));
+    logEvent ("vrstva skoncila: zrusena=" + juce::String ((int) cancelled) + " ok=" + juce::String ((int) res.has_value())
+              + (res.has_value() ? juce::String() : " chyba=" + res.error()));
 
     if (! res.has_value())
     {

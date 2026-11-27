@@ -1,4 +1,4 @@
-RAFA MUSIC STUDIO – verzia 1.0.0-rc2 (kandidát na stabilnú verziu)
+RAFA MUSIC STUDIO – verzia 1.0.0-rc3 (kandidát na stabilnú verziu)
 =====================================================================
 
 1. INŠTALÁCIA / AKTUALIZÁCIA
@@ -17,7 +17,7 @@ Tvoje skladby sú v Dokumenty\RAFA MUSIC STUDIO (Rozpracované a Skladby).
 Aktualizácia programu ich NEMAŽE a staré projekty sa otvoria aj v 1.0.
 
 Kontrola verzie: SETTINGS → Diagnostika. Na začiatku musí byť
-"Verzia aplikacie: 1.0.0-rc2 (commit 31e6eed)".
+"Verzia aplikacie: 1.0.0-rc3".
 
 
 2. KRÁTKY NÁVOD
@@ -29,7 +29,8 @@ Nahrávanie slučky (LOOP ako looper):
   1) PROJECT → Nová skladba.
   2) Nastav TEMPO, potom SETTINGS → Dĺžka slučky… (1, 2, 4, 8, 16 taktov)
      a Odpočítanie… (0, 1 alebo 2 takty).
-  3) Zapni LOOP, stlač REC. Po odpočítaní sa nahrá presne nastavená dĺžka
+  3) Zapni LOOP, stlač REC. Odporúčané je odpočítanie 1 takt – kým klikáš myšou,
+     máš čas chytiť gitaru. Po odpočítaní sa nahrá presne nastavená dĺžka
      a slučka hneď hrá dokola – bez medzery.
   4) Ďalšia vrstva: kým slučka hrá, vyber ďalšiu stopu a stlač REC.
      Nahrávanie začne od najbližšieho začiatku slučky, prehrávanie sa
@@ -54,5 +55,7 @@ Nastavenia (SETTINGS):
   Plynulé prvé opakovanie slučky – má byť ZAP (odporúčané).
   Výpadky zvuku – počítadlo výpadkov (má zostať 0).
   Diagnostika – správa o programe; pri probléme ju pošli Claudovi.
+  (Program si zapisuje aj súbor udalosti.txt v priečinku Dokumenty\RAFA MUSIC STUDIO –
+   čo sa stalo pri REC/STOP; Diagnostika obsahuje jeho posledné riadky.)
 
 EFFECTS: efekty budú až vo verzii 1.1 (tlačidlo zatiaľ ukáže iba oznam).

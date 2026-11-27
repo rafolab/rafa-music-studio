@@ -667,6 +667,14 @@ void MainComponent::runDiagnostics()
 
         report << "Plynule prve opakovanie slucky: " << (smoothLoopEnabled() ? "ZAP" : "VYP")
                << (lastBridgeReport.isNotEmpty() ? " (posledne: " + lastBridgeReport + ")" : juce::String()) << nl;
+
+        // poslednych 40 udalosti (REC/STOP/vrstvy) - pomoze pri hladani chyby
+        juce::StringArray ev;
+        ev.addLines (RafaPaths::getRootFolder().getChildFile ("udalosti.txt").loadFileAsString());
+        ev.removeEmptyStrings();
+        report << nl << "--- Posledne udalosti ---" << nl;
+        for (int i = juce::jmax (0, ev.size() - 40); i < ev.size(); ++i)
+            report << "  " << ev[i] << nl;
     }
     auto file = Diagnostics::saveReport (report);
     juce::SystemClipboard::copyTextToClipboard (report);
@@ -790,6 +798,7 @@ te::AudioTrack* MainComponent::prepareTrackForRecording()
             assignError = sk ("vybraný vstup sa nenašiel – skontroluj Nastavenia zvuku");
 
         setStatus (sk ("Nahrávanie sa nespustilo: ") + assignError, RafaColours::record);
+        logEvent ("CHYBA vstupu: " + assignError);
         return nullptr;
     }
 
@@ -803,8 +812,18 @@ void MainComponent::startRecording()
 
     auto& transport = edit->getTransport();
 
+    // predosle nahravanie sa este overuje (napr. STOP tesne predtym) - dokoncime to hned,
+    // aby REC pri hrajucej slucke spravne zvolil vrstvu bez zastavenia
+    if (pendingRecordingCheck && ! transport.isRecording() && ! transport.isRecordingStopping())
+        checkFinishedRecording();
+
+    logEvent ("REC stlacene: hra=" + juce::String ((int) transport.isPlaying()) + " nahrava=" + juce::String ((int) transport.isRecording())
+              + " slucka=" + juce::String ((int) transport.looping) + " vrstva=" + juce::String ((int) fly.active)
+              + " caka_na_kontrolu=" + juce::String ((int) pendingRecordingCheck));
+
     if (fly.active)   // REC pocas letmej vrstvy = zrusit ju
     {
+        logEvent ("-> zrusenie cakajucej vrstvy");
         cancelFlyingLayer();
         return;
     }
@@ -814,12 +833,16 @@ void MainComponent::startRecording()
          && transport.getLoopRange().getLength().inSeconds() >= 2.0)
     {
         if (startFlyingLayer())
+        {
+            logEvent ("-> vrstva bez zastavenia");
             return;
+        }
     }
 
     if (transport.isRecording())
     {
         // v slucke REC ukonci vrstvu a slucka hra dalej; inak REC = STOP
+        logEvent (loopRecordPass ? "-> ukoncenie vrstvy, slucka hra dalej" : "-> STOP nahravania");
         if (loopRecordPass)
             finishLoopRecordingPass();
         else
@@ -827,6 +850,8 @@ void MainComponent::startRecording()
 
         return;
     }
+
+    logEvent ("-> nove nahravanie od zaciatku (s odpocitanim podla nastavenia)");
 
     if (transport.looping && transport.getLoopRange().getLength().inSeconds() < 2.0)
     {
@@ -911,6 +936,20 @@ void MainComponent::stopTransport()
     const bool wasRecording = transport.isRecording();
     loopRecordPass = false;
 
+    // zastavene este pocas odpocitania? (nic sa nenahralo - prazdnu novu stopu potom odstranime)
+    stoppedDuringCountIn = false;
+    if (wasRecording)
+    {
+        const auto mode = edit->getCountInMode();
+        const int bars = mode == te::Edit::CountIn::twoBar ? 2 : mode == te::Edit::CountIn::oneBar ? 1 : 0;
+        double bpm = 120.0; int num = 4;
+        if (auto* t = edit->tempoSequence.getTempo (0)) bpm = t->getBpm();
+        if (auto* ts = edit->tempoSequence.getTimeSig (0)) num = ts->numerator;
+        const double countInMs = bars * num * 60000.0 / juce::jmax (20.0, bpm);
+        stoppedDuringCountIn = bars > 0 && (juce::Time::getMillisecondCounter() - recordingStartedMs) < countInMs + 150.0;
+    }
+    logEvent ("STOP: nahravalo=" + juce::String ((int) wasRecording) + " pocas_odpocitania=" + juce::String ((int) stoppedDuringCountIn));
+
     transport.stop (false, false);
 
     if (wasRecording)
@@ -963,6 +1002,30 @@ void MainComponent::checkFinishedRecording()
     if (track != nullptr && track->getClips().size() > clipsBeforeRecording)
         newClip = dynamic_cast<te::WaveAudioClip*> (track->getClips().getLast());
 
+    // STOP este pocas odpocitania: nic sa nenahralo - prazdny klip (dlzka 0) aj novu prazdnu stopu odstranime
+    if (stoppedDuringCountIn)
+    {
+        pendingRecordingCheck = false;
+        stoppedDuringCountIn = false;
+
+        // klip celý v odpocitani (konci pred zaciatkom nahravania) alebo nulovej dlzky = nic nahrate
+        const auto& trp = edit->getTransport();
+        const double recStart = trp.looping ? trp.getLoopRange().getStart().inSeconds() : 0.0;
+        if (newClip != nullptr && (newClip->getPosition().getLength().inSeconds() < 0.05
+                                    || newClip->getPosition().getEnd().inSeconds() <= recStart + 0.02))
+            newClip->removeFromParent();
+
+        // prazdnu stopu nechavame - dalsie nahravanie ju pouzije (mazanie stopy pocas hrania
+        // tesne pred vrstvou bez zastavenia sposobovalo pad motora)
+
+        recordTrackWasCreated = false;
+        trackList.refreshIfChanged();
+        saveEdit (true);
+        setStatus (sk ("Nahrávanie zrušené počas odpočítania – nič sa nenahralo."));
+        logEvent ("REC zrusene pocas odpocitania");
+        return;
+    }
+
     if (newClip != nullptr)
     {
         // Odpocitanie (count-in) sa nahrava tiez - klip orezeme na zaciatok
@@ -1002,6 +1065,8 @@ void MainComponent::checkFinishedRecording()
             pushHistory (std::move (h));
 
             saveEdit (true);
+            logEvent ("nahravka ulozena: stopa=" + track->getName() + " dlzka=" + juce::String (seconds, 3) + " s"
+                      + (flat.status == LoopFlattenResult::failed ? " CHYBA slucky: " + flat.error : juce::String()));
             if (flat.status == LoopFlattenResult::failed)
                 setStatus (sk ("CHYBA: slučku sa nepodarilo spracovať (") + flat.error
                              + sk ("). Pôvodná nahrávka ostala v priečinku skladby – vrstvu skontroluj alebo vráť (UNDO) a pošli Diagnostiku."),
@@ -1022,6 +1087,7 @@ void MainComponent::checkFinishedRecording()
         saveEdit (true);
         setStatus (sk ("Nahrávka nevznikla alebo je prázdna. Skontroluj vstup a pošli Diagnostiku."),
                    RafaColours::record);
+        logEvent ("CHYBA: nahravka nevznikla");
     }
 }
 
@@ -1373,4 +1439,20 @@ void MainComponent::setRecordOffsetMs (double ms)
 double MainComponent::getRecordOffsetMs() const
 {
     return settings->getDoubleValue ("recordOffsetMs", 0.0);
+}
+
+//==============================================================================
+// Zaznam udalosti (udalosti.txt v priecinku RAFA MUSIC STUDIO) - na dohladanie chyb u pouzivatela
+void MainComponent::logEvent (const juce::String& text)
+{
+    auto f = RafaPaths::getRootFolder().getChildFile ("udalosti.txt");
+
+    if (f.getSize() > 400 * 1024)
+    {
+        auto old = RafaPaths::getRootFolder().getChildFile ("udalosti_stare.txt");
+        old.deleteFile();
+        f.moveFileTo (old);
+    }
+
+    f.appendText (juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H:%M:%S") + "  " + text + "\n", false, false, "\n");
 }

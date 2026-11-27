@@ -226,6 +226,8 @@ private:
     // --- plynule prve opakovanie slucky (premostenie z pamate, LoopBridge.h) ---
     te::Plugin::Ptr bridgePlugin;
     bool bridgeArmed = false;
+    bool stoppedDuringCountIn = false;
+    void logEvent (const juce::String& text);
     int bridgeArmAttempts = 0;
     juce::uint32 bridgeArmedMs = 0;
     juce::String lastBridgeReport;

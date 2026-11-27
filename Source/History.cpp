@@ -76,6 +76,8 @@ void MainComponent::deleteTrackWithHistory (te::AudioTrack& t)
     if (edit == nullptr || recNow())
         return;
 
+    removeLoopBridge();   // pomocny plugin plynulej slucky nesmie ostat v mazanej stope
+
     HistoryEntry e;
     e.type = HistoryEntry::deleteTrack;
     e.label = sk ("odstránenie stopy „") + t.getName() + sk ("“");
@@ -101,6 +103,8 @@ bool MainComponent::undoLast()
         setStatus (sk ("Počas nahrávania sa nedá vracať – najprv dokonči pokus."), RafaColours::accent);
         return false;
     }
+
+    removeLoopBridge();   // UNDO moze odstranit stopu s pomocnym pluginom plynulej slucky
 
     auto e = undoStack.back();
     undoStack.pop_back();
@@ -156,6 +160,8 @@ bool MainComponent::redoLast()
 {
     if (edit == nullptr || redoStack.empty() || recNow())
         return false;
+
+    removeLoopBridge();
 
     auto e = redoStack.back();
     redoStack.pop_back();

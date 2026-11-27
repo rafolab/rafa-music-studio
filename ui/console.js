@@ -649,7 +649,8 @@
     form.addEventListener("submit", (ev) => { ev.preventDefault(); if (ev.submitter && tooSoon()) return; submit(); });
     form.querySelector(".cancel").addEventListener("click", (ev) => { ev.preventDefault(); if (!tooSoon()) cancel(); });
     form.addEventListener("click", (ev) => ev.stopPropagation());
-    setTimeout(() => { inp.focus(); inp.select(); }, 0);
+    for (const ms of [0, 80, 250]) setTimeout(() => { if (textDlg && document.activeElement !== inp) { inp.focus(); inp.select(); } }, ms);
+    textDlg.inp = inp;
     inp.addEventListener("keydown", (ev) => {
       ev.stopPropagation();
       if (ev.key === "Enter" || ev.keyCode === 13) { ev.preventDefault(); submit(); }
@@ -689,6 +690,15 @@
   // ------------------------------------------------------------------ klávesnica
   addEventListener("keydown", (ev) => {
     if (ev.target && ev.target.tagName === "INPUT") return;
+    // okno s nazvom je otvorene: klavesy patria do policka, nie ovladaniu konzoly
+    if (textDlg) {
+      ev.preventDefault();
+      const inp = textDlg.inp;
+      if (ev.key === "Enter") { textDlg.submit(); return; }
+      if (ev.key === "Escape") { textDlg.cancel(); return; }
+      if (inp) { inp.focus(); if (ev.key.length === 1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey) inp.value += ev.key; else if (ev.key === "Backspace") inp.value = inp.value.slice(0, -1); }
+      return;
+    }
     if (menu) {
       if (ev.key === "ArrowDown") { menuMove(1); ev.preventDefault(); return; }
       if (ev.key === "ArrowUp") { menuMove(-1); ev.preventDefault(); return; }
