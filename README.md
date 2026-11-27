@@ -1,58 +1,32 @@
 # RAFA MUSIC STUDIO
 
-Vlastná jednoduchá nahrávacia aplikácia pre Windows: gitara, ďalšie audio stopy a MIDI, metronóm, slučky, efekty, mix a ukladanie projektov. Postavená na open-source nahrávacom motore [Tracktion Engine](https://github.com/Tracktion/tracktion_engine) a knižnici [JUCE](https://juce.com).
+Jednoduchá nahrávacia „loop station“ pre Windows: gitara, slučky, vrstvy, metronóm, mix a export do Cakewalk/Sonar. Program je postavený na open-source nahrávacom motore [Tracktion Engine](https://github.com/Tracktion/tracktion_engine) a knižnici [JUCE](https://juce.com).
 
-## Stiahnutie
+## Stiahnutie – verzia 1.0 (stabilná)
 
-Najnovšia verzia pre Windows sa vyrába automaticky po každej zmene:
+**[Stiahnuť RAFA MUSIC STUDIO 1.0 pre Windows](https://github.com/rafolab/rafa-music-studio/releases/tag/v1.0.0)**
 
-**[Stiahnuť RAFA-MUSIC-STUDIO-Windows.zip](https://github.com/rafolab/rafa-music-studio/releases/download/najnovsia-verzia/RAFA-MUSIC-STUDIO-Windows.zip)**
+1. Stiahni `RAFA-MUSIC-STUDIO-1.0.0-Windows.zip`.
+2. ZIP ulož na disk, klikni naň pravým tlačidlom a vyber **Extrahovať všetko…**
+3. Spusti `RAFA MUSIC STUDIO.exe`. Ak Windows zobrazí modré okno „Systém Windows chránil váš počítač“, klikni na **Ďalšie informácie → Spustiť aj tak**. Program nie je digitálne podpísaný (podpis je platený), inak je v poriadku.
+4. Návod je v súbore `NAVOD.txt`.
 
-1. Stiahni ZIP a rozbaľ ho (pravé tlačidlo → Extrahovať všetko).
-2. Spusti `RAFA MUSIC STUDIO.exe`.
-3. Windows môže pri prvom spustení zobraziť modré okno „Systém Windows chránil váš počítač“. Klikni na **Ďalšie informácie → Spustiť aj tak**. Program nie je digitálne podpísaný (podpis sa platí), inak je v poriadku.
+Skladby sa ukladajú do priečinka `Dokumenty\RAFA MUSIC STUDIO\Skladby`.
 
-Skladby sa ukladajú do `Dokumenty\RAFA MUSIC STUDIO\Skladby`.
+## Čo vie
+- **Slučky** dlhé 1, 2, 4, 8 a 16 taktov, s odpočítaním aj bez neho. Prvé opakovanie hrá bez medzery a nechýba ani jedna doba.
+- **Vrstvy** sa nahrávajú počas hrania, bez zastavenia, a presne sedia na prvej.
+- **Ovládanie a mix**: UNDO/REDO, mute, solo, fadery, PAN, odstránenie stopy s možnosťou vrátenia.
+- **Metronóm** s hlasitosťou od úplného ticha. Do nahrávky sa nenahráva.
+- **Merače VU** ukazujú signál gitary.
+- **Skladby**: uloženie, otvorenie, export stôp a mixu do WAV (24-bit) pre Cakewalk/Sonar.
+- **Diagnostika** a záznam udalostí na rýchle hľadanie chýb.
 
-## Etapa 1 – skúška zvuku (aktuálna verzia)
+## Čo potrebuješ
+- Windows 10 alebo 11 (64-bit).
+- Zvukovú kartu alebo USB kombo, najlepšie s ovládačom ASIO. Overené s Blackstar BEAM Mini.
 
-Cieľ: overiť, že notebook + Blackstar BEAM Mini spoľahlivo nahrávajú gitaru.
-
-Čo program vie:
-- výber zvukového ovládača a zariadenia (Windows Audio / ASIO / DirectSound),
-- výber vstupu pre gitaru a merač úrovne signálu,
-- nahrávanie do novej stopy, prehrávanie, stop, návrat na začiatok,
-- každé ďalšie nahrávanie ide do novej stopy, takže počuješ predchádzajúce,
-- stlmenie a zmazanie stopy, premenovanie dvojklikom na meno,
-- automatické ukladanie skladby, otvorenie staršej skladby,
-- export mixu do WAV (do priečinka `Export` v skladbe),
-- tlačidlo **Diagnostika** – skopíruje technickú správu do schránky.
-
-Klávesové skratky: **R** = nahrávať, **medzerník** = prehrať / zastaviť, **Home** = na začiatok.
-
-### Testovací postup
-
-1. Pripoj BEAM Mini cez USB a zapni ho. Až potom spusti program.
-2. Klikni **Nastavenia zvuku** a skontroluj, že ako vstup je vybraté kombo.
-   - Najprv skús ovládač **Windows Audio**.
-   - Ak je oneskorenie veľké, skús **Windows Audio (Exclusive Mode)** alebo ASIO (ak je nainštalovaný Blackstar ovládač alebo ASIO4ALL).
-3. V poli **Vstup pre gitaru** vyber vstup, pri ktorom sa merač hýbe, keď hráš.
-4. Stlač **NAHRÁVAŤ**, zahraj pár taktov, stlač **STOP**.
-5. Stlač **Na začiatok** a **PREHRAŤ**. Nahrávka má znieť čisto, bez praskania.
-6. Nahraj druhú stopu k prvej a skontroluj, či obe sedia v rytme.
-7. Klikni **Diagnostika** a výsledok (Ctrl+V) pošli do chatu.
-8. Voliteľné: otvor `.tracktionedit` súbor skladby vo **Waveform Free**, alebo exportovaný WAV v **Sonare**.
-
-## Plán ďalších etáp
-
-| Etapa | Obsah |
-| --- | --- |
-| 1 | Skúška zvuku – nahrávanie a prehrávanie gitary (táto verzia) |
-| 2 | Viac stôp, tempo, metronóm s odpočítaním |
-| 3 | MIDI z Akai MPK Mini Play, vstavaný nástroj, kvantizácia |
-| 4 | Slučky (loop) a viac pokusov (takes) |
-| 5 | Efekty, mixér, VST3 pluginy |
-| 6 | Export pre Sonar (WAV stopy + MIDI), inštalátor, finálny vzhľad |
+Efekty (tlačidlo EFFECTS) prídu vo verzii 1.1.
 
 ## Pre vývojárov
 
@@ -65,4 +39,4 @@ Závislosti (JUCE a Tracktion Engine) sa stiahnu automaticky a sú zafixované n
 
 ## Licencia
 
-GPLv3 – pozri [LICENSE.md](LICENSE.md). Tracktion Engine a JUCE sa používajú pod ich open-source licenciami.
+GPLv3, pozri [LICENSE.md](LICENSE.md). Tracktion Engine a JUCE sa používajú pod ich open-source licenciami.
