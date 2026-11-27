@@ -47,6 +47,9 @@ jobs:
           Copy-Item $exe.FullName "dist/RAFA-MUSIC-STUDIO/"
           Copy-Item README.md "dist/RAFA-MUSIC-STUDIO/CITAJ-MA.md"
           Copy-Item LICENSE.md "dist/RAFA-MUSIC-STUDIO/"
+          # navod v UTF-8 s BOM a windowsovymi koncami riadkov (aby sa spravne otvoril v Poznamkovom bloku)
+          $navod = (Get-Content docs/NAVOD.txt -Raw -Encoding UTF8) -replace "`r?`n", "`r`n"
+          [System.IO.File]::WriteAllText("$PWD/dist/RAFA-MUSIC-STUDIO/NAVOD.txt", $navod, (New-Object System.Text.UTF8Encoding $true))
           Compress-Archive -Path dist/RAFA-MUSIC-STUDIO -DestinationPath dist/RAFA-MUSIC-STUDIO-Windows.zip -Force
 
       - name: Ulozit ako artefakt
@@ -66,3 +69,23 @@ jobs:
             --notes "Automaticky zostavene z commitu ${GITHUB_SHA::7}. Stiahni ZIP, rozbal a spusti RAFA MUSIC STUDIO.exe." \
             --target "$GITHUB_SHA" \
             --prerelease
+
+      - name: Zverejnit stabilnu verziu (ak verzia nema "-rc")
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER=$(grep -o 'RAFA_VERSION_LABEL="[^"]*"' CMakeLists.txt | head -1 | cut -d'"' -f2)
+          echo "Verzia: $VER"
+          case "$VER" in *-*) echo "Kandidat, stabilne vydanie sa nerobi"; exit 0;; esac
+          TAG="v$VER"
+          cp dist/RAFA-MUSIC-STUDIO-Windows.zip "dist/RAFA-MUSIC-STUDIO-$VER-Windows.zip"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "dist/RAFA-MUSIC-STUDIO-$VER-Windows.zip" --clobber
+          else
+            gh release create "$TAG" "dist/RAFA-MUSIC-STUDIO-$VER-Windows.zip" \
+              --title "RAFA MUSIC STUDIO ${VER%.0}" \
+              --notes-file docs/VYDANIE_1.0.md \
+              --target "$GITHUB_SHA" \
+              --latest
+          fi
