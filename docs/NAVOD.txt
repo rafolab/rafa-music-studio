@@ -1,4 +1,4 @@
-RAFA MUSIC STUDIO – verzia 1.0.0 (stabilná)
+RAFA MUSIC STUDIO – verzia 1.0.1 (stabilná)
 =====================================================================
 
 0. ČO POTREBUJEŠ
@@ -26,7 +26,7 @@ Tvoje skladby sú v Dokumenty\RAFA MUSIC STUDIO (Rozpracované a Skladby).
 Aktualizácia programu ich NEMAŽE a staré projekty sa otvoria aj v 1.0.
 
 Kontrola verzie: SETTINGS → Diagnostika. Na začiatku musí byť
-"Verzia aplikacie: 1.0.0".
+"Verzia aplikacie: 1.0.1".
 
 
 2. KRÁTKY NÁVOD

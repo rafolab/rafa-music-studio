@@ -81,11 +81,11 @@ jobs:
           TAG="v$VER"
           cp dist/RAFA-MUSIC-STUDIO-Windows.zip "dist/RAFA-MUSIC-STUDIO-$VER-Windows.zip"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "dist/RAFA-MUSIC-STUDIO-$VER-Windows.zip" --clobber
+            echo "Vydanie $TAG uz existuje - neprepisuje sa. Zvys cislo verzie."
           else
             gh release create "$TAG" "dist/RAFA-MUSIC-STUDIO-$VER-Windows.zip" \
               --title "RAFA MUSIC STUDIO ${VER%.0}" \
-              --notes-file docs/VYDANIE_1.0.md \
+              --notes-file "docs/VYDANIE_$VER.md" \
               --target "$GITHUB_SHA" \
               --latest
           fi

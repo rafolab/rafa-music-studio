@@ -240,6 +240,7 @@ private:
     bool bridgeArmed = false;
     bool stoppedDuringCountIn = false;
     bool stoppedBeforeLoopEnd = false;
+    double recordStartSec = 0.0;   // poloha, kde sa zacina skutocne nahravanie (po odpocitani)
     void logEvent (const juce::String& text);
     int bridgeArmAttempts = 0;
     juce::uint32 bridgeArmedMs = 0;

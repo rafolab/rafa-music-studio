@@ -41,13 +41,27 @@ FetchContent_MakeAvailable (juce tracktion_engine)
 
 # Uprava motora: hlasitost metronomu az do ticha (Tracktion ju inak drzi na minime 20 %).
 # Zapise sa iba ked sa nieco meni, aby sa motor zbytocne neprekompilovaval.
-foreach (te_file model/edit/tracktion_Edit.h model/edit/tracktion_Edit.cpp)
+# Presne retazce - ak sa motor zmeni a uprava sa neda overit, build skonci chybou (nie ticho bez nej).
+set (te_h_old "{ return juce::jlimit (0.2f, 1.0f, clickTrackGain.get()); }")
+set (te_h_new "{ return juce::jlimit (0.0f, 1.0f, clickTrackGain.get()); }")
+set (te_c_old "clickTrackGain = juce::jlimit (0.2f, 1.0f, gain);")
+set (te_c_new "clickTrackGain = juce::jlimit (0.0f, 1.0f, gain);")
+foreach (te_pair "h" "c")
+    if (te_pair STREQUAL "h")
+        set (te_file model/edit/tracktion_Edit.h)
+    else()
+        set (te_file model/edit/tracktion_Edit.cpp)
+    endif()
     set (te_path "${tracktion_engine_SOURCE_DIR}/modules/tracktion_engine/${te_file}")
     file (READ "${te_path}" te_text)
-    string (REPLACE "juce::jlimit (0.2f, 1.0f, " "juce::jlimit (0.0f, 1.0f, " te_new "${te_text}")
+    string (REPLACE "${te_${te_pair}_old}" "${te_${te_pair}_new}" te_new "${te_text}")
     if (NOT te_new STREQUAL te_text)
         file (WRITE "${te_path}" "${te_new}")
         message (STATUS "RAFA: hlasitost metronomu povolena az do ticha (${te_file})")
+    endif()
+    string (FIND "${te_new}" "${te_${te_pair}_new}" te_found)
+    if (te_found EQUAL -1)
+        message (FATAL_ERROR "RAFA: uprava hlasitosti metronomu sa nedala overit v ${te_file} - motor sa zmenil")
     endif()
 endforeach()
 
@@ -104,7 +118,7 @@ target_compile_definitions (${TARGET_NAME} PRIVATE
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:${TARGET_NAME},JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:${TARGET_NAME},JUCE_VERSION>"
-    RAFA_VERSION_LABEL="1.0.0"
+    RAFA_VERSION_LABEL="1.0.1"
     RAFA_COMMIT="${RAFA_COMMIT}"
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1)
 

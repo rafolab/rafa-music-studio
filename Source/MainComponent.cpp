@@ -836,6 +836,14 @@ void MainComponent::startRecording()
     if (pendingRecordingCheck && ! transport.isRecording() && ! transport.isRecordingStopping())
         checkFinishedRecording();
 
+    // predosla nahravka sa este dopisuje / spracuva - nove REC by prepisalo jej evidenciu (historia, UNDO)
+    if (! transport.isRecording() && ! fly.active && (pendingRecordingCheck || transport.isRecordingStopping()))
+    {
+        logEvent ("REC odlozene: predosla nahravka sa este dokoncuje");
+        setStatus (sk ("Dokončujem predchádzajúcu nahrávku – stlač REC o chvíľu znova."), RafaColours::accent);
+        return;
+    }
+
     logEvent ("REC stlacene: hra=" + juce::String ((int) transport.isPlaying()) + " nahrava=" + juce::String ((int) transport.isRecording())
               + " slucka=" + juce::String ((int) transport.looping) + " vrstva=" + juce::String ((int) fly.active)
               + " caka_na_kontrolu=" + juce::String ((int) pendingRecordingCheck));
@@ -903,6 +911,7 @@ void MainComponent::startRecording()
         lastLoopPosition = -1.0e9;
         installLoopBridge (*currentRecordingTrack);
         transport.setPosition (transport.getLoopRange().getStart());
+        recordStartSec = transport.getLoopRange().getStart().inSeconds();
         transport.record (false);
         setStatus (sk ("● Nahrávam vrstvu slučky do stopy „") + currentRecordingTrack->getName()
                      + sk ("“ – jeden prechod, potom hrá ďalej."), RafaColours::record);
@@ -912,6 +921,7 @@ void MainComponent::startRecording()
         // Rezim vrstvenia: kazda nova vrstva zacina od zaciatku skladby (pozicia 0),
         // aby sedela s predchadzajucimi. Nahravanie z aktualnej pozicie zatial nie je.
         transport.setPosition (te::TimePosition());
+        recordStartSec = 0.0;
         transport.record (false);
         setStatus (sk ("● Nahrávam od začiatku do stopy „") + currentRecordingTrack->getName() + sk ("“ – STOP ukončí nahrávanie."),
                    RafaColours::record);
@@ -957,19 +967,12 @@ void MainComponent::stopTransport()
     stoppedBeforeLoopEnd = wasRecording && loopRecordPass;   // STOP este v prvom prechode slucky
     loopRecordPass = false;
 
-    // zastavene este pocas odpocitania? (nic sa nenahralo - prazdnu novu stopu potom odstranime)
-    stoppedDuringCountIn = false;
-    if (wasRecording)
-    {
-        const auto mode = edit->getCountInMode();
-        const int bars = mode == te::Edit::CountIn::twoBar ? 2 : mode == te::Edit::CountIn::oneBar ? 1 : 0;
-        double bpm = 120.0; int num = 4;
-        if (auto* t = edit->tempoSequence.getTempo (0)) bpm = t->getBpm();
-        if (auto* ts = edit->tempoSequence.getTimeSig (0)) num = ts->numerator;
-        const double countInMs = bars * num * 60000.0 / juce::jmax (20.0, bpm);
-        stoppedDuringCountIn = bars > 0 && (juce::Time::getMillisecondCounter() - recordingStartedMs) < countInMs + 150.0;
-    }
-    logEvent ("STOP: nahravalo=" + juce::String ((int) wasRecording) + " pocas_odpocitania=" + juce::String ((int) stoppedDuringCountIn));
+    // zastavene este pocas odpocitania? Presne podla polohy prehravania (odpocitanie bezi pred
+    // zaciatkom nahravania), nie podla odhadu casu.
+    const double stopPosSec = edit->getTransport().getPosition().inSeconds();
+    stoppedDuringCountIn = wasRecording && stopPosSec < recordStartSec - 0.0005;
+    logEvent ("STOP: nahravalo=" + juce::String ((int) wasRecording) + " pocas_odpocitania=" + juce::String ((int) stoppedDuringCountIn)
+              + (wasRecording ? " poloha=" + juce::String (stopPosSec - recordStartSec, 3) + " s" : juce::String()));
 
     transport.stop (false, false);
 
@@ -1024,18 +1027,19 @@ void MainComponent::checkFinishedRecording()
         newClip = dynamic_cast<te::WaveAudioClip*> (track->getClips().getLast());
 
     // STOP este pocas odpocitania: nic sa nenahralo - prazdny klip (dlzka 0) aj novu prazdnu stopu odstranime
+    if (stoppedDuringCountIn && newClip != nullptr
+         && newClip->getPosition().getEnd().inSeconds() > recordStartSec + 0.001)
+        stoppedDuringCountIn = false;   // nieco sa uz nahralo - normalne spracovanie s historiou a UNDO
+
     if (stoppedDuringCountIn)
     {
+        if (newClip != nullptr)
+            newClip->removeFromParent();   // cely v odpocitani = bez zvuku z nahravania
+
         pendingRecordingCheck = false;
         stoppedDuringCountIn = false;
 
-        // klip celý v odpocitani (konci pred zaciatkom nahravania) alebo nulovej dlzky = nic nahrate
-        const auto& trp = edit->getTransport();
-        const double recStart = trp.looping ? trp.getLoopRange().getStart().inSeconds() : 0.0;
-        if (newClip != nullptr && (newClip->getPosition().getLength().inSeconds() < 0.05
-                                    || newClip->getPosition().getEnd().inSeconds() <= recStart + 0.02))
-            newClip->removeFromParent();
-
+        // klip, ktory konci az po zaciatku nahravania, moze obsahovat zvuk - ten sa spracuje normalne
         // prazdnu stopu nechavame - dalsie nahravanie ju pouzije (mazanie stopy pocas hrania
         // tesne pred vrstvou bez zastavenia sposobovalo pad motora)
 
