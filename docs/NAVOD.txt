@@ -1,11 +1,20 @@
-RAFA MUSIC STUDIO – verzia 1.0.0-rc6 (kandidát na stabilnú verziu)
+RAFA MUSIC STUDIO – verzia 1.0.0 (stabilná)
 =====================================================================
+
+0. ČO POTREBUJEŠ
+----------------
+- Windows 10 alebo 11 (64-bit).
+- Zvukovú kartu alebo kombo s USB (napr. Blackstar BEAM Mini) – najlepšie
+  s ovládačom ASIO. Zariadenie zapni a pripoj ešte PRED spustením programu.
+- Pri prvom spustení: SETTINGS → Nastavenia zvuku (zvoľ ASIO a svoje
+  zariadenie) a SETTINGS → Vstupné zariadenie (vstup, kde je gitara;
+  pri BEAM Mini cez ASIO je to IN 3).
 
 1. INŠTALÁCIA / AKTUALIZÁCIA
 ----------------------------
 1) Zatvor RAFA MUSIC STUDIO, ak beží.
-2) ZÁLOHA starej verzie: priečinok so starým programom premenuj,
-   napríklad na  RAFA-MUSIC-STUDIO-2E7-zaloha .
+2) Ak máš staršiu verziu: priečinok so starým programom premenuj,
+   napríklad na  RAFA-MUSIC-STUDIO-stara .
    (Ak by nová verzia nefungovala, stačí spustiť program zo zálohy.)
 3) ZIP súbor najprv ULOŽ na disk (napr. do Stiahnuté), potom naň klikni
    pravým tlačidlom → "Extrahovať všetko…". Exe priamo zo ZIPu nespúšťaj.
@@ -17,7 +26,7 @@ Tvoje skladby sú v Dokumenty\RAFA MUSIC STUDIO (Rozpracované a Skladby).
 Aktualizácia programu ich NEMAŽE a staré projekty sa otvoria aj v 1.0.
 
 Kontrola verzie: SETTINGS → Diagnostika. Na začiatku musí byť
-"Verzia aplikacie: 1.0.0-rc6".
+"Verzia aplikacie: 1.0.0".
 
 
 2. KRÁTKY NÁVOD
@@ -41,7 +50,9 @@ UNDO / REDO: vráti/obnoví posledný krok (Ctrl+Z / Ctrl+Y).
 Odstránenie stopy: TRACKS → Odstrániť stopu, potvrdíš na displeji.
   Omylom zmazanú stopu vrátiš cez UNDO.
 Fadery, PAN, M (mute) a S (solo) ovládaš myšou.
-Metronóm sa do nahrávky gitary nenahráva.
+Metronóm sa do nahrávky gitary nenahráva. Jeho hlasitosť (malý gombík pri
+  METRONOME) ide od úplného ticha po plnú hlasitosť.
+Ručičky VU v kľude ukazujú signál gitary (aj pri vypnutom MONITOR).
 
 Ukladanie: PROJECT → Uložiť ako… (napíš meno, tlačidlo ULOŽIŤ).
   Program potvrdí uloženie na displeji. Priebežne ukladá aj sám.
