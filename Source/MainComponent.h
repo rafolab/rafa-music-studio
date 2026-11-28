@@ -227,11 +227,23 @@ private:
         te::EditItemID trackID;
         te::InputDeviceInstance* instance = nullptr;
         double loopStart = 0.0, loopEnd = 0.0;
+        bool endScheduled = false;
+        bool keep = false;                  // STOP: ulozit, co sa nahralo          // REC pocas nahravania: koniec na konci prechodu
+        int passes = 0;                     // pocet celych prechodov pri naplanovanom konci
     } fly;
     bool recNow() const   { return edit != nullptr && (edit->getTransport().isRecording() || fly.active); }
     bool startFlyingLayer();
     void beginFlyingRecording();
     void cancelFlyingLayer();
+    void finishFlyingAtPassEnd();           // REC pocas vrstvy: dokoncit na konci aktualneho prechodu
+    void stopFlyingNow();                   // STOP pocas vrstvy: ulozit, co sa nahralo
+    struct PendingUnroll                    // dlha vrstva: slucka sa predlzila, ostatne stopy sa zopakovali
+    {
+        bool active = false;
+        double loopStart = 0.0, loopEndBefore = 0.0, loopEndAfter = 0.0;
+        std::vector<std::pair<juce::String, juce::ValueTree>> extraClips;   // stopa, stav kopie klipu
+    } pendingUnroll;
+    void unrollLoop (int passes, const te::EditItemID& skipTrack);
     void flyingLayerStopped (tl::expected<te::Clip::Array, juce::String>, bool cancelled);
     void checkFlyingLayer();
 
@@ -293,6 +305,7 @@ private:
         bool trackCreatedByTake = false;    // take: stopa vznikla az pri nahravani
         juce::ValueTree trackState;         // stav stopy (pri odstraneni / vrateni)
         int trackIndex = -1;                // poradie stopy medzi audio stopami
+        PendingUnroll unroll;               // take: predlzenie slucky dlhou vrstvou
     };
     std::vector<HistoryEntry> undoStack, redoStack;
     bool recordTrackWasCreated = false;

@@ -126,6 +126,21 @@ bool MainComponent::undoLast()
                 break;
             }
 
+        // dlha vrstva: kopie klipov v ostatnych stopach prec a povodna dlzka slucky
+        if (e.unroll.active)
+        {
+            for (auto& [tid, st] : e.unroll.extraClips)
+                if (auto* t = findTrackById (tid))
+                {
+                    auto id = te::EditItemID::fromVar (st.getProperty (te::IDs::id));
+                    for (auto* c : t->getClips())
+                        if (c->itemID == id) { c->removeFromParent(); break; }
+                }
+
+            edit->getTransport().setLoopRange ({ te::TimePosition::fromSeconds (e.unroll.loopStart),
+                                                 te::TimePosition::fromSeconds (e.unroll.loopEndBefore) });
+        }
+
         // stopa, ktora vznikla az pri tomto pokuse a ostala prazdna, zmizne tiez
         if (e.trackCreatedByTake && track->getClips().isEmpty())
         {
@@ -194,6 +209,21 @@ bool MainComponent::redoLast()
         }
 
         e.clipState = inserted->state.createCopy();   // pre dalsie UNDO (nove ID klipu)
+
+        if (e.unroll.active)
+        {
+            for (auto& [tid, st] : e.unroll.extraClips)
+                if (auto* t = findTrackById (tid))
+                {
+                    auto cp = st.createCopy();
+                    te::EditItemID::remapIDs (cp, nullptr, *edit);
+                    if (auto* c = te::insertClipWithState (*t, cp))
+                        st = c->state.createCopy();
+                }
+
+            edit->getTransport().setLoopRange ({ te::TimePosition::fromSeconds (e.unroll.loopStart),
+                                                 te::TimePosition::fromSeconds (e.unroll.loopEndAfter) });
+        }
         selectTrack (track->itemID.toString());
         setStatus (sk ("Pokus obnovený."), RafaColours::play);
     }

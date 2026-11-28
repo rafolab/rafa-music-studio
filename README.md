@@ -2,11 +2,11 @@
 
 Jednoduchá nahrávacia „loop station“ pre Windows: gitara, slučky, vrstvy, metronóm, mix a export do Cakewalk/Sonar. Program je postavený na open-source nahrávacom motore [Tracktion Engine](https://github.com/Tracktion/tracktion_engine) a knižnici [JUCE](https://juce.com).
 
-## Stiahnutie – verzia 1.0.1 (stabilná)
+## Stiahnutie – verzia 1.1.0 (stabilná)
 
-**[Stiahnuť RAFA MUSIC STUDIO 1.0.1 pre Windows](https://github.com/rafolab/rafa-music-studio/releases/tag/v1.0.1)**
+**[Stiahnuť RAFA MUSIC STUDIO 1.1.0 pre Windows](https://github.com/rafolab/rafa-music-studio/releases/tag/v1.1.0)**
 
-1. Stiahni `RAFA-MUSIC-STUDIO-1.0.1-Windows.zip`.
+1. Stiahni `RAFA-MUSIC-STUDIO-1.1.0-Windows.zip`.
 2. ZIP ulož na disk, klikni naň pravým tlačidlom a vyber **Extrahovať všetko…**
 3. Spusti `RAFA MUSIC STUDIO.exe`. Ak Windows zobrazí modré okno „Systém Windows chránil váš počítač“, klikni na **Ďalšie informácie → Spustiť aj tak**. Program nie je digitálne podpísaný (podpis je platený), inak je v poriadku.
 4. Návod je v súbore `NAVOD.txt`.

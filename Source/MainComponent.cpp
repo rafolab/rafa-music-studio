@@ -848,10 +848,18 @@ void MainComponent::startRecording()
               + " slucka=" + juce::String ((int) transport.looping) + " vrstva=" + juce::String ((int) fly.active)
               + " caka_na_kontrolu=" + juce::String ((int) pendingRecordingCheck));
 
-    if (fly.active)   // REC pocas letmej vrstvy = zrusit ju
+    if (fly.active)   // REC pocas vrstvy: este nezacala = zrusit, inak dokoncit na konci prechodu
     {
-        logEvent ("-> zrusenie cakajucej vrstvy");
-        cancelFlyingLayer();
+        if (fly.started)
+        {
+            logEvent ("-> dokoncenie vrstvy na konci prechodu");
+            finishFlyingAtPassEnd();
+        }
+        else
+        {
+            logEvent ("-> zrusenie cakajucej vrstvy");
+            cancelFlyingLayer();
+        }
         return;
     }
 
@@ -962,7 +970,7 @@ void MainComponent::stopTransport()
         return;
 
     auto& transport = edit->getTransport();
-    cancelFlyingLayer();
+    stopFlyingNow();
     const bool wasRecording = transport.isRecording();
     stoppedBeforeLoopEnd = wasRecording && loopRecordPass;   // STOP este v prvom prechode slucky
     loopRecordPass = false;
@@ -1087,6 +1095,11 @@ void MainComponent::checkFinishedRecording()
             h.trackId = track->itemID.toString();
             h.clipState = newClip->state.createCopy();
             h.trackCreatedByTake = recordTrackWasCreated;
+            const bool unrolled = pendingUnroll.active;
+            const int unrollPasses = unrolled ? juce::roundToInt ((pendingUnroll.loopEndAfter - pendingUnroll.loopStart)
+                                                                   / juce::jmax (0.001, pendingUnroll.loopEndBefore - pendingUnroll.loopStart)) : 0;
+            h.unroll = std::move (pendingUnroll);
+            pendingUnroll = {};
             pushHistory (std::move (h));
 
             saveEdit (true);
@@ -1099,6 +1112,10 @@ void MainComponent::checkFinishedRecording()
                 setStatus (sk ("CHYBA: slučku sa nepodarilo spracovať (") + flat.error
                              + sk ("). Pôvodná nahrávka ostala v priečinku skladby – vrstvu skontroluj alebo vráť (UNDO) a pošli Diagnostiku."),
                            RafaColours::record);
+            else if (unrolled)
+                setStatus (sk ("Dlhá vrstva uložená (") + juce::String (seconds, 1) + sk (" s) – slučka je teraz ")
+                             + juce::String (unrollPasses) + sk ("× dlhšia, ostatné stopy sa opakujú. Ak ju nechceš, daj UNDO."),
+                           RafaColours::play);
             else if (transport.looping && transport.isPlaying())
                 setStatus (sk ("Vrstva uložená (") + juce::String (seconds, 1)
                              + sk (" s) – slučka hrá ďalej. REC = ďalšia vrstva."), RafaColours::play);

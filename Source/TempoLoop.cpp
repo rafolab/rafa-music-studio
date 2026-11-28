@@ -692,6 +692,7 @@ bool MainComponent::startFlyingLayer()
     pendingRecordingCheck = false;
     recordingStartedMs = juce::Time::getMillisecondCounter();
 
+    pendingUnroll = {};
     fly = {};
     fly.active = true;
     fly.trackID = track->itemID;
@@ -701,7 +702,8 @@ bool MainComponent::startFlyingLayer()
     installLoopBridge (*track);
     trackList.refreshIfChanged();
     trackList.setRecordingTrack (track);
-    setStatus (sk ("● Vrstva do stopy „") + track->getName() + sk ("“ sa nahrá od najbližšieho začiatku slučky – hraj ďalej."),
+    setStatus (sk ("● Vrstva do stopy „") + track->getName() + sk ("“ sa nahráva od najbližšieho začiatku slučky – hraj, koľko chceš. ")
+                 + sk ("REC = dokončiť na konci prechodu, STOP = koniec hneď."),
                RafaColours::record);
     updateTransportButtons();
     return true;
@@ -785,25 +787,95 @@ void MainComponent::beginFlyingRecording()
 
     inst->startRecording (std::move (contexts));
 
-    // koniec presne po jednom prechode (+50 ms; motor dopise aj vzorky kompenzacie latencie)
-    te::InputDeviceInstance::StopRecordingParameters sp;
-    sp.targetsToStop = { fly.trackID };
-    sp.unloopedTimeToEndRecording = punch + te::TimeDuration::fromSeconds (L + 0.05);
-    sp.isLooping = false;
-    sp.markedRange = loop;
-
-    juce::Component::SafePointer<MainComponent> safe (this);
-    inst->stopRecording (sp, [safe] (tl::expected<te::Clip::Array, juce::String> res)
-    {
-        if (safe != nullptr)
-            safe->flyingLayerStopped (std::move (res), false);
-    });
+    // koniec nie je naplanovany: hra sa, kolko hrac chce (REC = koniec prechodu, STOP = hned)
+    setStatus (sk ("● Nahrávam vrstvu od začiatku slučky – hraj, koľko chceš. REC = dokončiť na konci prechodu, STOP = koniec hneď."),
+               RafaColours::record);
 
     RAFA_T ("fly start toEnd=" + juce::String (toEnd, 3) + " punch=" + juce::String (punch.inSeconds(), 3)
             + " adjust=" + juce::String (engine.getDeviceManager().getRecordAdjustmentMs() * 48.0, 1)
             + " devIn=" + juce::String (engine.getDeviceManager().deviceManager.getCurrentAudioDevice()->getInputLatencyInSamples())
             + " devOut=" + juce::String (engine.getDeviceManager().deviceManager.getCurrentAudioDevice()->getOutputLatencyInSamples())
             + " block=" + juce::String (engine.getDeviceManager().deviceManager.getCurrentAudioDevice()->getCurrentBufferSizeSamples()));
+}
+
+// REC pocas nahravania vrstvy: koniec na konci aktualneho prechodu (cele prechody slucky)
+void MainComponent::finishFlyingAtPassEnd()
+{
+    if (! fly.active || ! fly.started || fly.stopping || fly.endScheduled || fly.instance == nullptr || edit == nullptr)
+        return;
+
+    auto* ctx = edit->getTransport().getCurrentPlaybackContext();
+
+    if (ctx == nullptr)
+    {
+        stopFlyingNow();
+        return;
+    }
+
+    const double L = fly.loopEnd - fly.loopStart;
+    const double U = ctx->globalStreamTimeToEditTimeUnlooped (engine.getDeviceManager().getCurrentStreamTime()).inSeconds();
+    const double played = U - fly.punchStart.inSeconds();
+
+    // REC tesne po zaciatku noveho prechodu (do 0,3 s) = hrac chcel skoncit na hranici, ktora prave presla
+    int passes = played < 0.0 ? 1 : (int) std::floor ((played - 0.3) / L) + 1;
+    passes = juce::jmax (1, passes);
+
+    const double endU = juce::jmax (U, fly.punchStart.inSeconds() + passes * L + 0.05);
+
+    fly.endScheduled = true;
+    fly.passes = passes;
+
+    te::InputDeviceInstance::StopRecordingParameters sp;
+    sp.targetsToStop = { fly.trackID };
+    sp.unloopedTimeToEndRecording = te::TimePosition::fromSeconds (endU);
+    sp.isLooping = false;
+    sp.markedRange = edit->getTransport().getLoopRange();
+
+    juce::Component::SafePointer<MainComponent> safe (this);
+    fly.instance->stopRecording (sp, [safe] (tl::expected<te::Clip::Array, juce::String> res)
+    {
+        if (safe != nullptr)
+            safe->flyingLayerStopped (std::move (res), false);
+    });
+
+    logEvent ("vrstva: koniec po " + juce::String (passes) + " prechodoch");
+    setStatus (sk ("● Dokončujem vrstvu na konci prechodu (") + juce::String (passes) + sk ("× slučka)…"), RafaColours::record);
+}
+
+// STOP pocas vrstvy: ulozit vsetko, co sa nahralo (nic sa nezahadzuje)
+void MainComponent::stopFlyingNow()
+{
+    if (! fly.active || fly.instance == nullptr || edit == nullptr)
+        return;
+
+    if (! fly.started || fly.stopping)
+    {
+        cancelFlyingLayer();
+        return;
+    }
+
+    if (fly.endScheduled)
+    {
+        // koniec uz je naplanovany - STOP ho urychli, prechody sa uz nedopocitavaju
+        fly.passes = 0;
+    }
+
+    fly.stopping = true;
+    fly.keep = true;
+    fly.endScheduled = false;
+    auto* ctx = edit->getTransport().getCurrentPlaybackContext();
+
+    te::InputDeviceInstance::StopRecordingParameters sp;
+    sp.targetsToStop = { fly.trackID };
+    sp.unloopedTimeToEndRecording = ctx != nullptr ? ctx->getUnloopedPosition() : fly.punchStart;
+    sp.isLooping = false;
+    sp.markedRange = edit->getTransport().getLoopRange();
+
+    fly.instance->prepareToStopRecording (sp.targetsToStop);
+    auto res = fly.instance->stopRecording (sp);
+
+    if (fly.active)
+        flyingLayerStopped (std::move (res), false);
 }
 
 void MainComponent::cancelFlyingLayer()
@@ -843,7 +915,7 @@ void MainComponent::flyingLayerStopped (tl::expected<te::Clip::Array, juce::Stri
     if (! fly.active)
         return;
 
-    cancelled = cancelled || fly.stopping;
+    cancelled = cancelled || (fly.stopping && ! fly.keep);
     const double L = fly.loopEnd - fly.loopStart;
     fly.active = false;
     trackList.setRecordingTrack (nullptr);
@@ -869,18 +941,27 @@ void MainComponent::flyingLayerStopped (tl::expected<te::Clip::Array, juce::Stri
 
         const double recorded = te::AudioFile (engine, clip->getOriginalFile()).getLength();
 
-        if (recorded < L - 0.005)
+        // dlzka vrstvy: pri REC cele prechody, pri STOP vsetko, co sa nahralo
+        double length = fly.endScheduled && fly.passes > 0 ? juce::jmin (recorded, fly.passes * L) : recorded;
+
+        if (fly.endScheduled && fly.passes > 0 && recorded > fly.passes * L - 0.005)
+            length = fly.passes * L;
+
+        if (cancelled || length < 0.05)
         {
-            // neuplny prechod (STOP / REC pocas nahravania): klip odstranime, subor ostava v priecinku
+            // nic pouzitelne (zrusene pred zaciatkom prechodu): klip prec, subor ostava v priecinku
             clip->removeFromParent();
-            setStatus (cancelled ? sk ("Vrstva zrušená pred dokončením prechodu (nahrávka ostala v priečinku skladby).")
-                                 : sk ("Vrstva je kratšia ako slučka – nepoužitá (nahrávka ostala v priečinku skladby)."),
-                       RafaColours::accent);
+            setStatus (sk ("Vrstva zrušená – nič sa nenahralo."), RafaColours::accent);
             continue;
         }
 
-        // subor zacina presne na LOOP IN prechodu - klip na slucku, posun 0
-        clip->setPosition ({ { te::TimePosition::fromSeconds (fly.loopStart), te::TimePosition::fromSeconds (fly.loopEnd) },
+        const int passes = juce::jmax (1, (int) std::ceil (length / L - 0.001));
+
+        if (passes > 1)
+            unrollLoop (passes, fly.trackID);   // ostatne stopy sa zopakuju, slucka sa predlzi
+
+        // subor zacina presne na LOOP IN prechodu - klip na zaciatok slucky, posun 0
+        clip->setPosition ({ { te::TimePosition::fromSeconds (fly.loopStart), te::TimePosition::fromSeconds (fly.loopStart + length) },
                              te::TimeDuration() });
         pendingRecordingCheck = true;   // dalej ako bezna vrstva (historia, ulozenie, hlasenie)
         recordingCheckDeadline = juce::Time::getMillisecondCounter() + 4000;
@@ -902,8 +983,8 @@ void MainComponent::checkFlyingLayer()
         return;
     }
 
-    if (bridgeArmed || bridgePlugin == nullptr)
-        return;
+    if (bridgeArmed || bridgePlugin == nullptr || ! fly.endScheduled)
+        return;   // premostenie az ked je jasny koniec (cele prechody)
 
     auto* ctx = edit->getTransport().getCurrentPlaybackContext();
 
@@ -911,8 +992,55 @@ void MainComponent::checkFlyingLayer()
         return;
 
     const double U = ctx->globalStreamTimeToEditTimeUnlooped (engine.getDeviceManager().getCurrentStreamTime()).inSeconds();
-    const double passEnd = fly.punchStart.inSeconds() + (fly.loopEnd - fly.loopStart);
+    const double passEnd = fly.punchStart.inSeconds() + fly.passes * (fly.loopEnd - fly.loopStart);
 
-    if (U >= passEnd - 0.40 && U < passEnd - 0.04 && U > fly.punchStart.inSeconds() + 0.6)
+    if (U >= passEnd - 0.40 && U < passEnd - 0.04 && U > fly.punchStart.inSeconds() + 0.6
+         && fly.passes == 1)   // dlha vrstva: slucka sa predlzi, prvy prechod hra uz z klipu
         armLoopBridge (fly.loopStart, fly.loopEnd, 0);   // subor zacina presne na LOOP IN
+}
+
+// Dlha vrstva (viac prechodov): ostatne klipy v slucke sa zopakuju a slucka sa predlzi,
+// aby bolo pocut celu vrstvu. UNDO vsetko vrati (History.cpp).
+void MainComponent::unrollLoop (int passes, const te::EditItemID& skipTrack)
+{
+    auto& tr = edit->getTransport();
+    const double ls = fly.loopStart, le = fly.loopEnd, L = le - ls;
+
+    PendingUnroll u;
+    u.active = true;
+    u.loopStart = ls;
+    u.loopEndBefore = le;
+    u.loopEndAfter = ls + passes * L;
+
+    for (auto* t : te::getAudioTracks (*edit))
+    {
+        if (t->itemID == skipTrack)
+            continue;
+
+        juce::Array<te::Clip*> originals;
+        for (auto* c : t->getClips())
+            if (c->getPosition().getStart().inSeconds() >= ls - 0.001 && c->getPosition().getEnd().inSeconds() <= le + 0.001)
+                originals.add (c);
+
+        for (auto* c : originals)
+        {
+            const auto pos = c->getPosition();
+
+            for (int k = 1; k < passes; ++k)
+            {
+                auto copy = c->state.createCopy();
+                te::EditItemID::remapIDs (copy, nullptr, *edit);
+
+                if (auto* inserted = te::insertClipWithState (*t, copy))
+                {
+                    inserted->setPosition ({ pos.time + te::TimeDuration::fromSeconds (k * L), pos.offset });
+                    u.extraClips.push_back ({ t->itemID.toString(), inserted->state.createCopy() });
+                }
+            }
+        }
+    }
+
+    tr.setLoopRange ({ te::TimePosition::fromSeconds (ls), te::TimePosition::fromSeconds (u.loopEndAfter) });
+    logEvent ("slucka predlzena na " + juce::String (passes) + " prechody, kopii klipov: " + juce::String ((int) u.extraClips.size()));
+    pendingUnroll = std::move (u);
 }
